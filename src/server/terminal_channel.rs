@@ -1,7 +1,7 @@
 //! A single, non-persistent shell carried by an authenticated remote session.
 use base::message_proto::{
     terminal_action, TerminalAction, TerminalClosed, TerminalData, TerminalImage,
-    TerminalImageRequest, TerminalOpened, TerminalResponse,
+    TerminalImageRequest, TerminalInputAck, TerminalOpened, TerminalResponse,
 };
 use hbb_common::{
     anyhow::{anyhow, bail, Result},
@@ -29,10 +29,16 @@ pub fn size(rows: u32, cols: u32) -> Result<(u16, u16)> {
 enum Output {
     Data(Vec<u8>),
     Image(TerminalImage),
+    InputAck(TerminalInputAck),
     Closed,
 }
 
 pub struct TerminalChannel {
+    pub resume_token: String,
+    retained_output: std::collections::VecDeque<Vec<u8>>,
+    retained_bytes: usize,
+    output_omitted: bool,
+    ended: bool,
     output: mpsc::Receiver<Output>,
     image: std::sync::mpsc::SyncSender<TerminalImageRequest>,
     next_output: tokio::time::Instant,
@@ -53,7 +59,7 @@ pub struct TerminalChannel {
         unix,
         not(any(target_os = "android", target_os = "ios"))
     ))]
-    input: Option<std::sync::mpsc::SyncSender<Vec<u8>>>,
+    input: Option<std::sync::mpsc::SyncSender<(Vec<u8>, u32)>>,
 }
 
 impl TerminalChannel {
@@ -97,10 +103,28 @@ impl TerminalChannel {
         let pid = child.process_id();
         drop(pair.slave);
         let (output_tx, output) = mpsc::channel(16);
-        let (input, input_rx) = sync_mpsc::sync_channel::<Vec<u8>>(16);
+        let (input, input_rx) = sync_mpsc::sync_channel::<(Vec<u8>, u32)>(16);
+        let input_tx = output_tx.clone();
         thread::spawn(move || {
-            while let Ok(data) = input_rx.recv() {
-                if let Err(err) = writer.write_all(&data).and_then(|_| writer.flush()) {
+            while let Ok((data, sequence)) = input_rx.recv() {
+                let result = writer.write_all(&data).and_then(|_| writer.flush());
+                let error = result
+                    .as_ref()
+                    .err()
+                    .map(ToString::to_string)
+                    .unwrap_or_default();
+                if sequence != 0
+                    && input_tx
+                        .blocking_send(Output::InputAck(TerminalInputAck {
+                            sequence,
+                            error,
+                            ..Default::default()
+                        }))
+                        .is_err()
+                {
+                    break;
+                }
+                if let Err(err) = result {
                     log::trace!("Terminal writer stopped: {err}");
                     break;
                 }
@@ -160,6 +184,11 @@ impl TerminalChannel {
             }
         });
         Ok(Self {
+            resume_token: hbb_common::uuid::Uuid::new_v4().to_string(),
+            retained_output: Default::default(),
+            retained_bytes: 0,
+            output_omitted: false,
+            ended: false,
             output,
             image,
             next_output: tokio::time::Instant::now(),
@@ -193,7 +222,7 @@ impl TerminalChannel {
                 self.input
                     .as_ref()
                     .ok_or_else(|| anyhow!("Terminal is closed"))?
-                    .try_send(data.data.to_vec())
+                    .try_send((data.data.to_vec(), data.input_sequence))
                     .map_err(|_| anyhow!("Terminal input queue is full or closed"))?;
                 return Ok(());
             }
@@ -221,11 +250,40 @@ impl TerminalChannel {
         bail!("Invalid terminal action")
     }
 
+    pub fn buffer_detached_output(&mut self) {
+        for _ in 0..64 {
+            let Ok(output) = self.output.try_recv() else {
+                break;
+            };
+            match output {
+                Output::Data(data) => {
+                    self.retained_bytes += data.len();
+                    self.retained_output.push_back(data);
+                    while self.retained_bytes > 1024 * 1024 {
+                        if let Some(old) = self.retained_output.pop_front() {
+                            self.retained_bytes -= old.len();
+                            self.output_omitted = true;
+                        }
+                    }
+                }
+                Output::Closed => self.ended = true,
+                Output::Image(_) | Output::InputAck(_) => {}
+            }
+        }
+    }
+
     pub fn opened(&self) -> TerminalResponse {
         let mut response = TerminalResponse::new();
         response.set_opened(TerminalOpened {
             terminal_id: 0,
             success: true,
+            service_id: self.resume_token.clone(),
+            message: if self.output_omitted {
+                "Some terminal output was omitted while disconnected.".into()
+            } else {
+                String::new()
+            },
+            replay_terminal_output: !self.retained_output.is_empty(),
             ..Default::default()
         });
         response
@@ -239,6 +297,25 @@ pub async fn receive(channel: &mut Option<TerminalChannel>) -> TerminalResponse 
     let mut response = TerminalResponse::new();
     // Keep the deadline across select! cancellation so video traffic cannot restart it.
     tokio::time::sleep_until(session.next_output).await;
+    if let Some(data) = session.retained_output.pop_front() {
+        session.retained_bytes -= data.len();
+        session.next_output = tokio::time::Instant::now() + std::time::Duration::from_millis(16);
+        response.set_data(TerminalData {
+            terminal_id: 0,
+            data: data.into(),
+            replayed: true,
+            ..Default::default()
+        });
+        return response;
+    }
+    if session.ended {
+        channel.take();
+        response.set_closed(TerminalClosed {
+            terminal_id: 0,
+            ..Default::default()
+        });
+        return response;
+    }
     match session.output.recv().await {
         Some(Output::Data(data)) => {
             session.next_output =
@@ -255,6 +332,7 @@ pub async fn receive(channel: &mut Option<TerminalChannel>) -> TerminalResponse 
                 tokio::time::Instant::now() + std::time::Duration::from_millis(16);
             response.set_image(data);
         }
+        Some(Output::InputAck(ack)) => response.set_input_ack(ack),
         Some(Output::Closed) | None => {
             channel.take();
             response.set_closed(TerminalClosed {
@@ -340,26 +418,64 @@ impl Drop for TerminalChannel {
             not(any(target_os = "android", target_os = "ios"))
         ))]
         {
-            self.input.take();
+            let input = self.input.take();
             if let Some(mut child) = self.child.take() {
-                if let Some(pid) = child.process_id() {
-                    // portable-pty makes the shell the session/process-group leader.
-                    if unsafe { libc::kill(-(pid as i32), libc::SIGKILL) } != 0 {
-                        log::trace!(
-                            "Terminal process group cleanup: {}",
-                            std::io::Error::last_os_error()
-                        );
-                    }
-                }
-                if let Err(err) = child.kill() {
-                    log::trace!("Terminal child cleanup: {err}");
-                }
                 std::thread::spawn(move || {
+                    if let Some(pid) = child.process_id() {
+                        kill_shell_jobs(pid);
+                        if matches!(child.try_wait(), Ok(None)) {
+                            if let Err(err) = child.kill() {
+                                log::trace!("Terminal child cleanup: {err}");
+                            }
+                        }
+                    }
+                    drop(input);
                     if let Err(err) = child.wait() {
                         log::trace!("Terminal child wait: {err}");
                     }
                 });
             }
+        }
+    }
+}
+
+#[cfg(all(
+    feature = "terminal-channel",
+    unix,
+    not(any(target_os = "android", target_os = "ios"))
+))]
+fn kill_shell_jobs(shell: u32) {
+    let output = match std::process::Command::new("/bin/ps")
+        .args(["-axo", "pid=,ppid="])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => {
+            log::trace!("Cannot enumerate terminal descendants");
+            return;
+        }
+    };
+    let processes: Vec<(u32, u32)> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            Some((fields.next()?.parse().ok()?, fields.next()?.parse().ok()?))
+        })
+        .collect();
+    let mut descendants = vec![shell];
+    let mut index = 0;
+    while index < descendants.len() {
+        let parent = descendants[index];
+        for &(pid, ppid) in &processes {
+            if ppid == parent && pid != shell && !descendants.contains(&pid) {
+                descendants.push(pid);
+            }
+        }
+        index += 1;
+    }
+    for pid in descendants.into_iter().skip(1).rev() {
+        if unsafe { libc::kill(pid as i32, libc::SIGKILL) } != 0 {
+            log::trace!("Terminal job cleanup: {}", std::io::Error::last_os_error());
         }
     }
 }
@@ -464,6 +580,72 @@ mod pty_tests {
         drop(session);
         tokio::time::timeout(Duration::from_secs(3), async {
             while unsafe { libc::kill(pid as i32, 0) } == 0 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn destroy_stops_background_jobs_and_acknowledged_paste_is_complete() {
+        let mut session = Some(TerminalChannel::open(24, 80).unwrap());
+        write(
+            session.as_mut().unwrap(),
+            b"sleep 30 & printf '\\nBACKGROUND_PID:%s\\nJOB_READY\\n' $!\r",
+        );
+        let output = until(&mut session, "\r\nJOB_READY\r\n").await;
+        let background: i32 = output
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("BACKGROUND_PID:")
+                    .and_then(|value| value.trim().parse().ok())
+            })
+            .unwrap();
+        write(session.as_mut().unwrap(), b"stty -icanon -echo; python3 -c \"import sys,time; print('RAW_READY',flush=True); time.sleep(.1); d=sys.stdin.buffer.read(180000); print('INPUT_BYTES:%s'%len(d),flush=True)\"; stty sane\r");
+        until(&mut session, "RAW_READY\r\n").await;
+        let mut output = String::new();
+        for (index, chunk) in vec![b'x'; 180000].chunks(4096).enumerate() {
+            let sequence = index as u32 + 1;
+            let mut action = TerminalAction::new();
+            action.set_data(TerminalData {
+                terminal_id: 0,
+                data: chunk.to_vec().into(),
+                input_sequence: sequence,
+                ..Default::default()
+            });
+            session.as_mut().unwrap().action(action).unwrap();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    match receive(&mut session).await.union {
+                        Some(terminal_response::Union::InputAck(ack)) => {
+                            assert_eq!(ack.sequence, sequence);
+                            assert!(ack.error.is_empty());
+                            break;
+                        }
+                        Some(terminal_response::Union::Data(data)) => {
+                            output.push_str(std::str::from_utf8(&data.data).unwrap())
+                        }
+                        _ => panic!("Expected data or input acknowledgement"),
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        }
+        if !output.contains("INPUT_BYTES:180000") {
+            until(&mut session, "INPUT_BYTES:180000").await;
+        }
+        drop(session);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let running = std::fs::read_to_string(format!("/proc/{background}/stat"))
+                    .ok()
+                    .map(|stat| !stat.contains(") Z "))
+                    .unwrap_or(false);
+                if !running {
+                    break;
+                }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         })

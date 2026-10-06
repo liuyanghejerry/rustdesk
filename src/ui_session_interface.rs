@@ -825,18 +825,22 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg));
     }
 
-    pub fn terminal_write(&self, data: Vec<u8>) {
-        for chunk in data.chunks(4096) {
-            let mut action = TerminalAction::new();
-            action.set_data(TerminalData {
-                terminal_id: 0,
-                data: bytes::Bytes::copy_from_slice(chunk),
-                ..Default::default()
-            });
-            let mut msg = Message::new();
-            msg.set_terminal_action(action);
-            self.send(Data::Message(msg));
-        }
+    pub fn terminal_start(&self, rows: u32, cols: u32, resume_token: String, create_if_missing: bool) {
+        let mut action = TerminalAction::new();
+        action.set_open(OpenTerminal { terminal_id: 0, rows, cols, resume_token, create_if_missing, ..Default::default() });
+        let mut msg = Message::new(); msg.set_terminal_action(action); self.send(Data::Message(msg));
+    }
+
+    pub fn terminal_stop(&self, resume_token: String, keep_shell: bool) {
+        let mut action = TerminalAction::new();
+        action.set_close(CloseTerminal { terminal_id: 0, resume_token, keep_shell, ..Default::default() });
+        let mut msg = Message::new(); msg.set_terminal_action(action); self.send(Data::Message(msg));
+    }
+
+    pub fn terminal_write(&self, data: Vec<u8>, input_sequence: u32) {
+        let mut action = TerminalAction::new();
+        action.set_data(TerminalData { terminal_id: 0, data: data.into(), input_sequence, ..Default::default() });
+        let mut msg = Message::new(); msg.set_terminal_action(action); self.send(Data::Message(msg));
     }
 
     pub fn resize_terminal(&self, terminal_id: i32, rows: u32, cols: u32) {

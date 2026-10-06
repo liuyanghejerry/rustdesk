@@ -3,6 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_hbb/models/input_modifier_utils.dart';
 
 void main() {
+  test('Ctrl+J virtual key preserves LF while the mobile IME Enter becomes CR', () {
+    String payload(TerminalInputSource source) => prepareTerminalInputPayload(
+      '\x0a', source: source, isMobileOrWebMobile: true,
+      bracketedPasteMode: false, ctrlLocked: false, altLocked: false,
+    );
+    expect(payload(TerminalInputSource.virtualKey), '\x0a');
+    expect(payload(TerminalInputSource.keyboard), '\r');
+  });
   group('shouldReleaseStaleMobileShift', () {
     test('does not release when cached shift is already false', () {
       expect(

@@ -453,6 +453,7 @@ pub struct Connection {
     // cancelled or unknown jobs.
     cm_read_job_ids: HashSet<i32>,
     shell_channel: Option<super::terminal_channel::TerminalChannel>,
+    shell_channel_token: String,
     terminal_service_id: String,
     terminal_persistent: bool,
     // Used to avoid too many repeated scope violation warnings.
@@ -652,6 +653,7 @@ impl Connection {
             tx_post_seq,
             cm_read_job_ids: HashSet::new(),
             shell_channel: None,
+            shell_channel_token: String::new(),
             terminal_service_id: "".to_owned(),
             terminal_persistent: false,
             scope_violation_messages: HashSet::new(),
@@ -1025,7 +1027,7 @@ impl Connection {
                     let enabled = conn.terminal_channel_enabled();
                     if enabled != terminal_permission {
                         terminal_permission = enabled;
-                        if !enabled { conn.shell_channel.take(); }
+                        if !enabled { conn.destroy_shell_channel(); }
                         if conn.authorized && conn.lr.terminal_channel {
                             conn.send_permission(Permission::Terminal, enabled).await;
                         }
@@ -1033,11 +1035,14 @@ impl Connection {
                 },
                 response = super::terminal_channel::receive(&mut conn.shell_channel) => {
                     if conn.terminal_channel_enabled() {
+                        if matches!(response.union, Some(base::message_proto::terminal_response::Union::Closed(_))) {
+                            super::terminal_channel_sessions::destroyed(&conn.shell_channel_token);
+                        }
                         let mut msg = Message::new();
                         msg.set_terminal_response(response);
                         conn.send(msg).await;
                     } else {
-                        conn.shell_channel.take();
+                        conn.destroy_shell_channel();
                     }
                 },
                 res = conn.stream.next() => {
@@ -2100,6 +2105,7 @@ impl Connection {
         pi.sas_enabled = sas_enabled;
         pi.features = Some(Features {
             terminal_channel: super::terminal_channel::supported(),
+            terminal_channel_resume: super::terminal_channel::supported(),
             privacy_mode: privacy_mode::is_privacy_mode_supported(),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             terminal,
@@ -5272,7 +5278,13 @@ impl Connection {
             return;
         }
         self.closed = true;
-        self.shell_channel.take();
+        if let Some(channel) = self.shell_channel.take() {
+            if self.terminal_channel_enabled() && !reason.starts_with("connection manager") && reason != "web console" {
+                if let Err(err) = super::terminal_channel_sessions::retain(self.lr.my_id.clone(), channel) {
+                    log::warn!("Cannot retain terminal after disconnect: {err}");
+                }
+            } else { super::terminal_channel_sessions::destroyed(&channel.resume_token); }
+        }
         // If voice A,B -> C, and A,B has voice call
         // B disconnects, C will reset the voice call input.
         //
@@ -6255,6 +6267,12 @@ impl Connection {
         self.terminal_generic_service = Some(s);
     }
 
+    fn destroy_shell_channel(&mut self) {
+        if let Some(channel) = self.shell_channel.take() {
+            super::terminal_channel_sessions::destroyed(&channel.resume_token);
+        }
+    }
+
     fn terminal_channel_enabled(&self) -> bool {
         super::terminal_channel::supported()
             && Config::get_option(keys::OPTION_ENABLE_TERMINAL) == "Y"
@@ -6264,28 +6282,49 @@ impl Connection {
     async fn handle_shell_channel_action(&mut self, action: TerminalAction) {
         use base::message_proto::terminal_action::Union;
         let result = if !self.terminal_channel_enabled() {
-            self.shell_channel.take();
+            self.destroy_shell_channel();
             Err(hbb_common::anyhow::anyhow!("No permission of terminal"))
         } else {
             match action.union.as_ref() {
                 Some(Union::Open(open)) if open.terminal_id == 0 => {
                     if self.shell_channel.is_none() {
+                        match super::terminal_channel_sessions::take(&self.lr.my_id, &open.resume_token) {
+                            Ok(channel) => self.shell_channel = channel,
+                            Err(err) => { self.send_shell_channel_error(err.to_string()).await; return; }
+                        }
+                    }
+                    if self.shell_channel.is_none() {
+                        if !open.resume_token.is_empty() {
+                            if hbb_common::uuid::Uuid::parse_str(&open.resume_token).is_err() {
+                                self.send_shell_channel_error("Invalid terminal resume token".into()).await; return;
+                            }
+                            if !open.create_if_missing {
+                                self.send_shell_channel_error("The retained shell is no longer available.".into()).await; return;
+                            }
+                        }
                         let rows = open.rows;
                         let cols = open.cols;
+                        if !open.resume_token.is_empty() {
+                            super::terminal_channel_sessions::attached(&self.lr.my_id, &open.resume_token);
+                        }
                         match tokio::task::spawn_blocking(move || super::terminal_channel::TerminalChannel::open(rows, cols)).await {
-                            Ok(Ok(channel)) => {
+                            Ok(Ok(mut channel)) => {
+                                if !open.resume_token.is_empty() { channel.resume_token = open.resume_token.clone(); }
                                 if !self.terminal_channel_enabled() {
+                                    super::terminal_channel_sessions::destroyed(&open.resume_token);
                                     drop(channel);
                                     self.send_shell_channel_error("No permission of terminal".into()).await;
                                     return;
                                 }
                                 self.shell_channel = Some(channel);
                             }
-                            Ok(Err(err)) => { self.send_shell_channel_error(err.to_string()).await; return; }
-                            Err(err) => { self.send_shell_channel_error(err.to_string()).await; return; }
+                            Ok(Err(err)) => { super::terminal_channel_sessions::destroyed(&open.resume_token); self.send_shell_channel_error(err.to_string()).await; return; }
+                            Err(err) => { super::terminal_channel_sessions::destroyed(&open.resume_token); self.send_shell_channel_error(err.to_string()).await; return; }
                         }
                     }
                     if let Some(channel) = self.shell_channel.as_ref() {
+                        self.shell_channel_token = channel.resume_token.clone();
+                        super::terminal_channel_sessions::attached(&self.lr.my_id, &channel.resume_token);
                         let mut msg = Message::new();
                         msg.set_terminal_response(channel.opened());
                         self.send(msg).await;
@@ -6293,9 +6332,25 @@ impl Connection {
                     Ok(())
                 }
                 Some(Union::Close(close)) if close.terminal_id == 0 => {
-                    self.shell_channel.take();
+                    let channel = match self.shell_channel.take() {
+                        Some(channel) => Some(channel),
+                        None => match super::terminal_channel_sessions::take(&self.lr.my_id, &close.resume_token) {
+                            Ok(channel) => channel,
+                            Err(err) => { self.send_shell_channel_error(err.to_string()).await; return; }
+                        },
+                    };
+                    if close.keep_shell {
+                        if let Some(channel) = channel {
+                            if let Err(err) = super::terminal_channel_sessions::retain(self.lr.my_id.clone(), channel) {
+                                self.send_shell_channel_error(err.to_string()).await; return;
+                            }
+                        }
+                    } else {
+                        if let Some(channel) = channel.as_ref() { super::terminal_channel_sessions::destroyed(&channel.resume_token); }
+                        drop(channel);
+                    }
                     let mut response = TerminalResponse::new();
-                    response.set_closed(TerminalClosed { terminal_id: 0, ..Default::default() });
+                    response.set_closed(TerminalClosed { terminal_id: 0, keep_shell: close.keep_shell, ..Default::default() });
                     let mut msg = Message::new();
                     msg.set_terminal_response(response);
                     self.send(msg).await;

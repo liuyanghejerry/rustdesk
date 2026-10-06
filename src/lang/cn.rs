@@ -791,5 +791,12 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Control keys", "控制"),
         ("Cursor keys", "光标"),
         ("Input and editing keys", "输入/编辑"),
+        ("Keep the shell running?", "是否保留 shell？"),
+        ("Keep the shell to resume later, or destroy it and stop its jobs.", "保留 shell 可稍后继续；销毁 shell 会停止其运行的任务。"),
+        ("Keep and exit", "保留并退出"),
+        ("Destroy and exit", "销毁并退出"),
+        ("Update the controlled device to use resumable terminals.", "请更新被控端以使用可续接终端。"),
+        ("Some terminal output was omitted while disconnected.", "断线期间的部分终端输出已省略。"),
+        ("The retained shell is no longer available.", "保留的 shell 已不可用，请重新打开终端。"),
     ].iter().cloned().collect();
 }

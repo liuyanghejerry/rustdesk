@@ -705,13 +705,13 @@ pub fn session_send_chat(session_id: SessionID, text: String) {
     }
 }
 
-pub fn session_terminal_start(session_id: SessionID, rows: u32, cols: u32) {
-    session_open_terminal(session_id, 0, rows, cols);
+pub fn session_terminal_start(session_id: SessionID, rows: u32, cols: u32, resume_token: String, create_if_missing: bool) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_start(rows, cols, resume_token, create_if_missing); }
 }
 
-pub fn session_terminal_write(session_id: SessionID, data: Vec<u8>) {
+pub fn session_terminal_write(session_id: SessionID, data: Vec<u8>, input_sequence: u32) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
-        session.terminal_write(data);
+        session.terminal_write(data, input_sequence);
     }
 }
 
@@ -725,8 +725,8 @@ pub fn session_terminal_resize(session_id: SessionID, rows: u32, cols: u32) {
     session_resize_terminal(session_id, 0, rows, cols);
 }
 
-pub fn session_terminal_stop(session_id: SessionID) {
-    session_close_terminal(session_id, 0);
+pub fn session_terminal_stop(session_id: SessionID, resume_token: String, keep_shell: bool) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_stop(resume_token, keep_shell); }
 }
 
 pub fn session_terminal_set_video_displays(

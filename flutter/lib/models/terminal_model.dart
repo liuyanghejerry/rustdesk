@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:uuid/uuid.dart';
+import 'package:flutter_hbb/mobile/pages/terminal_exit_dialog.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
@@ -48,6 +51,15 @@ class TerminalModel with ChangeNotifier {
   final FFI parent;
   final int terminalId;
   final bool isChannel;
+  Future<void> _channelInputQueue = Future.value();
+  Completer<void>? _inputAck;
+  int _inputSequence = DateTime.now().microsecondsSinceEpoch & 0xffffffff;
+  int _inputGeneration = 0;
+  Completer<void>? _closeAck;
+  Timer? _resumeRetry;
+  String get _resumeToken =>
+      bind.mainGetPeerOptionSync(id: id, key: terminalResumeOption);
+
   void Function(Map<String, dynamic>)? onImageResponse;
   late final Terminal terminal;
   late final TerminalController terminalController;
@@ -97,7 +109,7 @@ class TerminalModel with ChangeNotifier {
   ValueChanged<String>? onClipboardWriteBlocked;
   ValueChanged<String>? onClipboardWriteSucceeded;
 
-  Future<void> _handleInput(String data) async {
+  Future<void> _handleInput(String data, {bool virtualKey = false}) async {
     // xterm can complete asynchronous input after the Flutter page has gone
     // away. Stop before reading or clearing widget-owned modifier state.
     if (_disposed) return;
@@ -126,7 +138,9 @@ class TerminalModel with ChangeNotifier {
       // IME soft-keyboard paste prompts currently arrive from xterm as normal
       // text input with no paste-origin metadata. Keep them on the keyboard path;
       // clipboard-content heuristics can misclassify ordinary typing.
-      source: TerminalInputSource.keyboard,
+      source: virtualKey
+          ? TerminalInputSource.virtualKey
+          : TerminalInputSource.keyboard,
       isMobileOrWebMobile: isMobile || (isWeb && !isWebDesktop),
       bracketedPasteMode: terminal.bracketedPasteMode,
       ctrlLocked: ctrlLocked,
@@ -151,8 +165,7 @@ class TerminalModel with ChangeNotifier {
       // Send user input to remote terminal
       try {
         if (isChannel) {
-          await bind.sessionTerminalWrite(
-              sessionId: parent.sessionId, data: utf8.encode(data));
+          await _sendChannelInput(data);
         } else {
           await bind.sessionSendTerminalInput(
             sessionId: parent.sessionId,
@@ -163,9 +176,60 @@ class TerminalModel with ChangeNotifier {
       } catch (e) {
         debugPrint('[TerminalModel] Error sending terminal input: $e');
       }
+    } else if (isChannel) {
+      _writeToTerminal('\r\nTerminal is not connected.\r\n');
     } else {
       debugPrint('[TerminalModel] Terminal not opened yet, buffering input');
       _inputBuffer.add(data);
+    }
+  }
+
+  Future<void> _sendChannelInput(String text) {
+    final generation = _inputGeneration;
+    final sending = _channelInputQueue.then((_) async {
+      if (_disposed || !_terminalOpened || generation != _inputGeneration) {
+        return;
+      }
+      final data = utf8.encode(text);
+      for (var start = 0; start < data.length; start += 4096) {
+        if (_disposed || !_terminalOpened || generation != _inputGeneration) {
+          return;
+        }
+        final ack = Completer<void>();
+        _inputAck = ack;
+        _inputSequence = (_inputSequence % 0xffffffff) + 1;
+        try {
+          await Future.wait<void>([
+            ack.future.timeout(const Duration(seconds: 30)),
+            bind.sessionTerminalWrite(
+              sessionId: parent.sessionId,
+              data: Uint8List.fromList(
+                  data.sublist(start, (start + 4096).clamp(0, data.length))),
+              inputSequence: _inputSequence,
+            ),
+          ]);
+        } finally {
+          if (identical(_inputAck, ack)) _inputAck = null;
+        }
+      }
+    });
+    _channelInputQueue = sending.catchError((Object error) {
+      if (generation == _inputGeneration) _inputGeneration++;
+      if (!_disposed) {
+        _writeToTerminal('\r\nTerminal input stopped: $error\r\n');
+      }
+    });
+    return sending;
+  }
+
+  void _channelDisconnected() {
+    _inputGeneration++;
+    _terminalOpened = false;
+    _resumeRetry?.cancel();
+    onImageResponse?.call({'type': 'error', 'error': 'Connection lost'});
+    if (_inputAck?.isCompleted == false) {
+      _inputAck!
+          .completeError(StateError('Connection lost; input was not retried'));
     }
   }
 
@@ -234,6 +298,11 @@ class TerminalModel with ChangeNotifier {
   }
 
   void onReady() {
+    if (isChannel) {
+      _channelDisconnected();
+      bind.sessionTerminalSetVideoDisplays(
+          sessionId: parent.sessionId, displays: Int32List(0));
+    }
     parent.dialogManager.dismissAll();
 
     // Fire and forget - don't block onReady. If the transport reconnects while
@@ -263,9 +332,24 @@ class TerminalModel with ChangeNotifier {
     debugPrint(
         '[TerminalModel] Opening terminal $terminalId, sessionId: ${parent.sessionId}, size: ${cols}x$rows');
     try {
+      var resumeToken = '';
+      var createIfMissing = false;
+      if (isChannel) {
+        resumeToken = _resumeToken;
+        createIfMissing = resumeToken.isEmpty;
+        if (createIfMissing) {
+          resumeToken = const Uuid().v4();
+          bind.mainSetPeerOptionSync(
+              id: id, key: terminalResumeOption, value: resumeToken);
+        }
+      }
       final opening = isChannel
           ? bind.sessionTerminalStart(
-              sessionId: parent.sessionId, rows: rows, cols: cols)
+              sessionId: parent.sessionId,
+              rows: rows,
+              cols: cols,
+              resumeToken: resumeToken,
+              createIfMissing: createIfMissing)
           : bind.sessionOpenTerminal(
               sessionId: parent.sessionId,
               terminalId: terminalId,
@@ -290,7 +374,7 @@ class TerminalModel with ChangeNotifier {
   }
 
   Future<void> sendVirtualKey(String data) async {
-    return _handleInput(data);
+    return _handleInput(data, virtualKey: isChannel);
   }
 
   Future<void> pasteText(String data) async {
@@ -305,13 +389,40 @@ class TerminalModel with ChangeNotifier {
     return _sendInputPayload(payload);
   }
 
-  Future<void> closeTerminal() async {
-    if (_terminalOpened || isChannel) {
+  Future<void> closeTerminal({bool keepShell = false}) async {
+    if (isChannel) {
+      final connected = _terminalOpened;
+      _channelDisconnected();
+      if (keepShell && !connected && _resumeToken.isNotEmpty) {
+        await bind.sessionTerminalStop(
+            sessionId: parent.sessionId,
+            resumeToken: _resumeToken,
+            keepShell: true);
+        return;
+      }
+      final ack = Completer<void>();
+      _closeAck = ack;
       try {
-        final closing = isChannel
-            ? bind.sessionTerminalStop(sessionId: parent.sessionId)
-            : bind.sessionCloseTerminal(
-                sessionId: parent.sessionId, terminalId: terminalId);
+        await Future.wait<void>([
+          ack.future.timeout(const Duration(seconds: 10)),
+          bind.sessionTerminalStop(
+              sessionId: parent.sessionId,
+              resumeToken: _resumeToken,
+              keepShell: keepShell),
+        ]);
+        if (!keepShell) {
+          bind.mainSetPeerOptionSync(
+              id: id, key: terminalResumeOption, value: '');
+        }
+      } finally {
+        if (identical(_closeAck, ack)) _closeAck = null;
+      }
+      return;
+    }
+    if (_terminalOpened) {
+      try {
+        final closing = bind.sessionCloseTerminal(
+            sessionId: parent.sessionId, terminalId: terminalId);
         await closing.timeout(
           const Duration(seconds: 3),
           onTimeout: () {
@@ -417,6 +528,17 @@ class TerminalModel with ChangeNotifier {
     }
 
     switch (type) {
+      case 'input_ack':
+        if (int.tryParse('${evt['sequence']}') == _inputSequence &&
+            _inputAck?.isCompleted == false) {
+          final error = evt['error']?.toString() ?? '';
+          if (error.isEmpty) {
+            _inputAck!.complete();
+          } else {
+            _inputAck!.completeError(StateError(error));
+          }
+        }
+        break;
       case 'image':
         onImageResponse?.call(evt);
         break;
@@ -441,10 +563,17 @@ class TerminalModel with ChangeNotifier {
     final String? serviceId = evt['service_id']?.toString();
 
     debugPrint(
-        '[TerminalModel] Terminal opened response: success=$success, message=$message, service_id=$serviceId');
+        '[TerminalModel] Terminal opened response: success=$success, message=$message, has_service_id=${serviceId?.isNotEmpty == true}');
 
     if (success) {
+      if (isChannel && serviceId != null && serviceId.isNotEmpty) {
+        bind.mainSetPeerOptionSync(
+            id: id, key: terminalResumeOption, value: serviceId);
+      }
       _terminalOpened = true;
+      if (isChannel && message.isNotEmpty) {
+        _writeToTerminal('\r\n${translate(message)}\r\n');
+      }
 
       // On reconnect, the server may replay recent output. That replay can include
       // terminal queries like DSR/DA; xterm answers them through onOutput as
@@ -496,8 +625,7 @@ class TerminalModel with ChangeNotifier {
     for (final data in buffer) {
       try {
         if (isChannel) {
-          await bind.sessionTerminalWrite(
-              sessionId: parent.sessionId, data: utf8.encode(data));
+          await _sendChannelInput(data);
         } else {
           await bind.sessionSendTerminalInput(
             sessionId: parent.sessionId,
@@ -515,7 +643,9 @@ class TerminalModel with ChangeNotifier {
     final data = evt['data'];
 
     if (data != null) {
-      final suppressTerminalOutput = _suppressNextTerminalDataOutput;
+      final suppressTerminalOutput = _suppressNextTerminalDataOutput ||
+          evt['replay'] == true ||
+          evt['replay'] == 'true';
       _suppressNextTerminalDataOutput = false;
       try {
         String text = '';
@@ -635,6 +765,10 @@ class TerminalModel with ChangeNotifier {
   }
 
   void _handleTerminalClosed(Map<String, dynamic> evt) {
+    if (_closeAck?.isCompleted == false) _closeAck!.complete();
+    if (isChannel && evt['keep_shell'] != true && evt['keep_shell'] != 'true') {
+      bind.mainSetPeerOptionSync(id: id, key: terminalResumeOption, value: '');
+    }
     final int exitCode = getExitCodeFromEvt(evt);
     _writeToTerminal('\r\nTerminal closed with exit code: $exitCode\r\n');
     _terminalOpened = false;
@@ -645,14 +779,36 @@ class TerminalModel with ChangeNotifier {
 
   void _handleTerminalError(Map<String, dynamic> evt) {
     final String message = evt['message'] ?? 'Unknown error';
+    if (isChannel && _closeAck?.isCompleted == false) {
+      _closeAck!.completeError(StateError(message));
+    }
+    if (isChannel && message == 'The retained shell is no longer available.') {
+      bind.mainSetPeerOptionSync(id: id, key: terminalResumeOption, value: '');
+    }
+    if (isChannel && message == 'Terminal transport disconnected') {
+      _channelDisconnected();
+      return;
+    }
+    if (isChannel && message == 'Terminal is reconnecting') {
+      _resumeRetry?.cancel();
+      _resumeRetry = Timer(const Duration(seconds: 1), () {
+        if (!_disposed) openTerminal(force: true);
+      });
+      return;
+    }
+    if (isChannel && _inputAck?.isCompleted == false) {
+      _inputAck!.completeError(StateError(message));
+    }
     onImageResponse?.call({'type': 'error', 'error': message});
-    _writeToTerminal('\r\nTerminal error: $message\r\n');
+    _writeToTerminal(
+        '\r\nTerminal error: ${isChannel ? translate(message) : message}\r\n');
   }
 
   @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    if (isChannel) _channelDisconnected();
     terminal.onOutput = null;
     terminal.onResize = null;
     isCtrlLocked = null;

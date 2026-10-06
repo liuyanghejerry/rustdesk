@@ -19,8 +19,14 @@ import '../../common.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import 'address_book.dart';
+import '../../mobile/pages/terminal_exit_dialog.dart';
 
 void clientClose(SessionID sessionId, FFI ffi) async {
+  if (isMobile && ffi.connType == ConnType.defaultConn && hasRetainedTerminal(ffi)) {
+    if (allowAskForNoteAtEndOfConnection(ffi, true) && await showConnEndAuditDialogCloseCanceled(ffi: ffi)) return;
+    if (await confirmRetainedTerminalExit(ffi)) closeConnection(terminalExitConfirmed: true);
+    return;
+  }
   if (allowAskForNoteAtEndOfConnection(ffi, true)) {
     if (await showConnEndAuditDialogCloseCanceled(ffi: ffi)) {
       return;

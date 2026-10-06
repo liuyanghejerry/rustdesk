@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 enum TerminalInputSource {
   keyboard,
   paste,
+  virtualKey,
 }
 
 /// Returns true when a stale mobile one-shot Shift state should be released
@@ -100,6 +101,8 @@ String prepareTerminalInputPayload(
       bracketedPasteMode: bracketedPasteMode,
     );
   }
+
+  if (source == TerminalInputSource.virtualKey) return data;
 
   var result = data;
   if (isMobileOrWebMobile && result == '\n') {

@@ -791,6 +791,13 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Control keys", ""),
         ("Cursor keys", ""),
         ("Input and editing keys", ""),
+        ("Keep the shell running?", ""),
+        ("Keep the shell to resume later, or destroy it and stop its jobs.", ""),
+        ("Keep and exit", ""),
+        ("Destroy and exit", ""),
+        ("Update the controlled device to use resumable terminals.", ""),
+        ("Some terminal output was omitted while disconnected.", ""),
+        ("The retained shell is no longer available.", ""),
     ].iter().cloned().collect();
 }
 

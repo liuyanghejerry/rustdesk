@@ -13,6 +13,7 @@ import 'package:flutter_hbb/mobile/pages/terminal_image_preview.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_network_status.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_shortcuts.dart';
 import 'package:xterm/xterm.dart';
+import 'terminal_exit_dialog.dart';
 
 /// Uses the remote page's authenticated session, without opening another connection.
 class SessionTerminalPage extends StatefulWidget {
@@ -28,19 +29,16 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
   final _viewKey = GlobalKey<TerminalViewState>();
   final _focusNode = FocusNode();
   bool _closing = false;
+  bool _choosingExit = false;
+  bool _exitApplied = false;
   int _imageId = 0;
   Completer<Uint8List>? _imageResult;
   BytesBuilder? _imageBytes;
   PointerDownEvent? _imageTap;
-  late final Int32List _desktopDisplays;
 
   @override
   void initState() {
     super.initState();
-    final pi = widget.ffi.ffiModel.pi;
-    _desktopDisplays = Int32List.fromList(pi.currentDisplay < 0
-        ? List<int>.generate(pi.displays.length, (i) => i)
-        : [pi.currentDisplay]);
     bind.sessionTerminalSetVideoDisplays(
         sessionId: widget.ffi.sessionId, displays: Int32List(0));
     _model = TerminalModel(widget.ffi, 0, true);
@@ -64,6 +62,30 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
       Navigator.of(context).popUntil((r) => r == route);
       Navigator.of(context).pop();
     }
+  }
+
+  Future<bool> _requestExit() async {
+    if (_choosingExit || _closing) return false;
+    if (!_model.terminalOpened && !hasRetainedTerminal(widget.ffi)) {
+      _close();
+      return false;
+    }
+    _choosingExit = true;
+    try {
+      final keep = await chooseTerminalExit(context);
+      if (keep == null || !mounted || _closing) return false;
+      try {
+        _exitApplied = true;
+        await _model.closeTerminal(keepShell: keep);
+        _close();
+      } catch (error) {
+        _exitApplied = false;
+        if (mounted) showToast('${translate('Failed')}: $error');
+      }
+    } finally {
+      _choosingExit = false;
+    }
+    return false;
   }
 
   Future<void> _openKeyboard() async {
@@ -186,70 +208,93 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
 
   @override
   void dispose() {
+    final pi = widget.ffi.ffiModel.pi;
     bind.sessionTerminalSetVideoDisplays(
-        sessionId: widget.ffi.sessionId, displays: _desktopDisplays);
+      sessionId: widget.ffi.sessionId,
+      displays: Int32List.fromList(pi.currentDisplay < 0
+          ? List<int>.generate(pi.displays.length, (i) => i)
+          : [pi.currentDisplay]),
+    );
     if (_imageResult?.isCompleted == false) {
       _imageResult!.completeError(Exception('Terminal closed'));
     }
     widget.ffi.ffiModel.removeListener(_permissionChanged);
     widget.ffi.unregisterTerminalModel(0);
-    unawaited(_model.closeTerminal());
+    if (!_exitApplied) {
+      unawaited(bind
+          .sessionTerminalStop(
+        sessionId: widget.ffi.sessionId,
+        resumeToken: bind.mainGetPeerOptionSync(
+            id: widget.ffi.id, key: terminalResumeOption),
+        keepShell: true,
+      )
+          .catchError((Object error) {
+        debugPrint('Terminal detach failed: $error');
+      }));
+    }
     _model.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: Text(translate('Terminal')),
-          actions: [
-            IconButton(
-                icon: const Icon(Icons.image_outlined),
-                tooltip: translate('Preview image'),
-                onPressed: _enterImagePath),
-            IconButton(
-              icon: const Icon(Icons.content_paste),
-              tooltip: translate('Paste'),
-              onPressed: _paste,
-            ),
-            IconButton(
-              icon: const Icon(Icons.keyboard),
-              tooltip: translate('wayland-soft-keyboard-input-label'),
-              onPressed: _openKeyboard,
-            ),
-          ],
-        ),
-        backgroundColor: Colors.black,
-        body: SafeArea(
-          child: Column(children: [
-            TerminalNetworkStatus(ffi: widget.ffi),
-            Expanded(
-              child: Listener(
-                onPointerDown: (event) => _imageTap = event,
-                onPointerUp: _imagePointerUp,
-                child: TerminalView(
-                  _model.terminal,
-                  key: _viewKey,
-                  focusNode: _focusNode,
-                  controller: _model.terminalController,
-                  autofocus: true,
-                  keyboardType: TextInputType.multiline,
-                  deleteDetection: true,
-                  textStyle: const TerminalStyle(fontSize: 14),
-                  padding: const EdgeInsets.all(8),
+  Widget build(BuildContext context) => PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) unawaited(_requestExit());
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            leading: BackButton(onPressed: _requestExit),
+            title: Text(translate('Terminal')),
+            actions: [
+              IconButton(
+                  icon: const Icon(Icons.image_outlined),
+                  tooltip: translate('Preview image'),
+                  onPressed: _enterImagePath),
+              IconButton(
+                icon: const Icon(Icons.content_paste),
+                tooltip: translate('Paste'),
+                onPressed: _paste,
+              ),
+              IconButton(
+                icon: const Icon(Icons.keyboard),
+                tooltip: translate('wayland-soft-keyboard-input-label'),
+                onPressed: _openKeyboard,
+              ),
+            ],
+          ),
+          backgroundColor: Colors.black,
+          body: SafeArea(
+            child: Column(children: [
+              TerminalNetworkStatus(ffi: widget.ffi),
+              Expanded(
+                child: Listener(
+                  onPointerDown: (event) => _imageTap = event,
+                  onPointerUp: _imagePointerUp,
+                  child: TerminalView(
+                    _model.terminal,
+                    key: _viewKey,
+                    focusNode: _focusNode,
+                    controller: _model.terminalController,
+                    autofocus: true,
+                    keyboardType: TextInputType.multiline,
+                    deleteDetection: true,
+                    textStyle: const TerminalStyle(fontSize: 14),
+                    padding: const EdgeInsets.all(8),
+                  ),
                 ),
               ),
-            ),
-            TerminalShortcuts(
-              groupLabels: [
-                translate('Control keys'),
-                translate('Cursor keys'),
-                translate('Input and editing keys'),
-              ],
-              onKey: _model.sendVirtualKey,
-            ),
-          ]),
+              TerminalShortcuts(
+                groupLabels: [
+                  translate('Control keys'),
+                  translate('Cursor keys'),
+                  translate('Input and editing keys'),
+                ],
+                onKey: _model.sendVirtualKey,
+              ),
+            ]),
+          ),
         ),
       );
 }

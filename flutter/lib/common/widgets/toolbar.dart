@@ -446,9 +446,13 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
   if (isMobile && isDefaultConn && pi.features.terminalChannel && perms['terminal'] == true) {
     v.add(TTextMenu(
       child: Text(translate('Terminal')),
-      onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => SessionTerminalPage(ffi: ffi),
-      )),
+      onPressed: () {
+        if (!pi.features.terminalChannelResume) {
+          showToast(translate('Update the controlled device to use resumable terminals.'));
+          return;
+        }
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => SessionTerminalPage(ffi: ffi)));
+      },
     ));
   }
 

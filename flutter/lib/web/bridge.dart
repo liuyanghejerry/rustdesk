@@ -1929,16 +1929,16 @@ class RustdeskImpl {
     throw UnimplementedError("sessionTakeScreenshot");
   }
 
-  Future<void> sessionTerminalStart({required UuidValue sessionId, required int rows, required int cols, dynamic hint}) =>
+  Future<void> sessionTerminalStart({required UuidValue sessionId, required int rows, required int cols, required String resumeToken, required bool createIfMissing, dynamic hint}) =>
       sessionOpenTerminal(sessionId: sessionId, terminalId: 0, rows: rows, cols: cols);
 
-  Future<void> sessionTerminalWrite({required UuidValue sessionId, required Uint8List data, dynamic hint}) =>
+  Future<void> sessionTerminalWrite({required UuidValue sessionId, required Uint8List data, required int inputSequence, dynamic hint}) =>
       sessionSendTerminalInput(sessionId: sessionId, terminalId: 0, data: utf8.decode(data));
 
   Future<void> sessionTerminalResize({required UuidValue sessionId, required int rows, required int cols, dynamic hint}) =>
       sessionResizeTerminal(sessionId: sessionId, terminalId: 0, rows: rows, cols: cols);
 
-  Future<void> sessionTerminalStop({required UuidValue sessionId, dynamic hint}) =>
+  Future<void> sessionTerminalStop({required UuidValue sessionId, required String resumeToken, required bool keepShell, dynamic hint}) =>
       sessionCloseTerminal(sessionId: sessionId, terminalId: 0);
 
   bool sessionTerminalSetVideoDisplays({required UuidValue sessionId, required Int32List displays, dynamic hint}) => false;

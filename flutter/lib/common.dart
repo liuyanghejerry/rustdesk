@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter_hbb/mobile/pages/terminal_exit_dialog.dart';
 
 import 'package:back_button_interceptor/back_button_interceptor.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
@@ -699,7 +700,13 @@ String formatDurationToTime(Duration duration) {
   return "${totalTime.toString().padLeft(2, "0")}:${mins.toString().padLeft(2, "0")}:${secs.toString().padLeft(2, "0")}";
 }
 
-closeConnection({String? id}) {
+closeConnection({String? id, bool terminalExitConfirmed = false}) {
+  if (isMobile && !terminalExitConfirmed && gFFI.connType == ConnType.defaultConn && hasRetainedTerminal(gFFI)) {
+    unawaited(confirmRetainedTerminalExit(gFFI).then((confirmed) {
+      if (confirmed) closeConnection(id: id, terminalExitConfirmed: true);
+    }));
+    return;
+  }
   if (isAndroid || isIOS) {
     () async {
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,

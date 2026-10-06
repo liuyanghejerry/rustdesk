@@ -103,6 +103,7 @@ message Features {
   bool terminal = 2;
   bool port_forward_mux = 3;
   bool terminal_channel = 4;
+  bool terminal_channel_resume = 5;
 }
 
 message CodecAbility {
@@ -904,6 +905,8 @@ message OpenTerminal {
   int32 terminal_id = 1;  // 0 for default terminal
   uint32 rows = 2;
   uint32 cols = 3;
+  string resume_token = 4;
+  bool create_if_missing = 5;
 }
 
 message ResizeTerminal {
@@ -916,10 +919,14 @@ message TerminalData {
   int32 terminal_id = 1;
   bytes data = 2;
   bool compressed = 3;
+  uint32 input_sequence = 4;
+  bool replayed = 5;
 }
 
 message CloseTerminal {
   int32 terminal_id = 1;
+  string resume_token = 2;
+  bool keep_shell = 3;
 }
 
 message TerminalImageRequest {
@@ -957,11 +964,17 @@ message TerminalOpened {
 message TerminalClosed {
   int32 terminal_id = 1;
   int32 exit_code = 2;
+  bool keep_shell = 3;
 }
 
 message TerminalError {
   int32 terminal_id = 1;
   string message = 2;
+}
+
+message TerminalInputAck {
+  uint32 sequence = 1;
+  string error = 2;
 }
 
 message TerminalResponse {
@@ -971,6 +984,7 @@ message TerminalResponse {
     TerminalClosed closed = 3;
     TerminalError error = 4;
     TerminalImage image = 5;
+    TerminalInputAck input_ack = 6;
   }
 }
 

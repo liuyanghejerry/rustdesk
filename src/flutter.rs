@@ -883,6 +883,7 @@ impl InvokeUiSession for FlutterHandler {
         for ref f in pi.features.iter() {
             features.insert("privacy_mode", f.privacy_mode);
             features.insert("terminal_channel", f.terminal_channel);
+            features.insert("terminal_channel_resume", f.terminal_channel_resume);
         }
         // compatible with 1.1.9
         if get_version_number(&pi.version) < get_version_number("1.2.0") {
@@ -1146,8 +1147,15 @@ impl InvokeUiSession for FlutterHandler {
                     ("type", json!("data")),
                     ("terminal_id", json!(data.terminal_id)),
                     ("data", json!(&encoded)),
+                    ("replay", json!(data.replayed)),
                 ];
                 self.push_event_("terminal_response", &event_data, &[], &[]);
+            }
+            Some(Union::InputAck(ack)) => {
+                self.push_event_("terminal_response", &[
+                    ("type", json!("input_ack")), ("terminal_id", json!(0)),
+                    ("sequence", json!(ack.sequence)), ("error", json!(ack.error)),
+                ], &[], &[]);
             }
             Some(Union::Image(image)) => {
                 let event_data = vec![
@@ -1162,6 +1170,7 @@ impl InvokeUiSession for FlutterHandler {
                     ("type", json!("closed")),
                     ("terminal_id", json!(closed.terminal_id)),
                     ("exit_code", json!(closed.exit_code)),
+                    ("keep_shell", json!(closed.keep_shell)),
                 ];
                 self.push_event_("terminal_response", &event_data, &[], &[]);
             }

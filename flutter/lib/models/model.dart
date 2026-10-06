@@ -1454,6 +1454,7 @@ class FfiModel with ChangeNotifier {
       Map<String, dynamic> features = json.decode(evt['features']);
       _pi.features.privacyMode = features['privacy_mode'] == true;
       _pi.features.terminalChannel = features['terminal_channel'] == true;
+      _pi.features.terminalChannelResume = features['terminal_channel_resume'] == true;
       if (!isCache) {
         handleResolutions(peerId, evt["resolutions"]);
       }
@@ -1492,7 +1493,14 @@ class FfiModel with ChangeNotifier {
     notifyListeners();
 
     if (!isCache) {
-      tryUseAllMyDisplaysForTheRemoteSession(peerId);
+      final channels = (parent.target?._terminalModels.values ?? <TerminalModel>[])
+          .where((model) => model.isChannel).toList();
+      if (connType == ConnType.defaultConn && channels.isNotEmpty) {
+        _cancelPendingMonitorRestore();
+        for (final model in channels) { model.onReady(); }
+      } else {
+        tryUseAllMyDisplaysForTheRemoteSession(peerId);
+      }
     }
   }
 
@@ -4499,6 +4507,7 @@ class Resolution {
 
 class Features {
   bool terminalChannel = false;
+  bool terminalChannelResume = false;
   bool privacyMode = false;
 }
 
