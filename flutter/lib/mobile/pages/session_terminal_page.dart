@@ -11,6 +11,7 @@ import 'package:flutter_hbb/models/terminal_model.dart';
 import 'package:flutter_hbb/models/terminal_image_path.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_image_preview.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_network_status.dart';
+import 'package:flutter_hbb/mobile/pages/terminal_shortcuts.dart';
 import 'package:xterm/xterm.dart';
 
 /// Uses the remote page's authenticated session, without opening another connection.
@@ -198,11 +199,6 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
     super.dispose();
   }
 
-  Widget _key(String label, String sequence) => TextButton(
-        onPressed: () => _model.sendVirtualKey(sequence),
-        child: Text(label),
-      );
-
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
@@ -245,41 +241,13 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
                 ),
               ),
             ),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: [
-                _key('Ctrl+C', '\x03'),
-                _key('Tab', '\t'),
-                _key('Esc', '\x1b'),
-                _key('←', '\x1b[D'),
-                _key('↑', '\x1b[A'),
-                _key('↓', '\x1b[B'),
-                _key('→', '\x1b[C'),
-                _key('Enter', '\r'),
-                _key('Shift+Tab', '\x1b[Z'),
-              ]),
-            ),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: [
-                _key('Ctrl+D', '\x04'),
-                _key('Ctrl+Z', '\x1a'),
-                _key('Ctrl+L', '\x0c'),
-                _key('Ctrl+R', '\x12'),
-                _key('Ctrl+J', '\x0a'),
-                _key('Ctrl+O', '\x0f'),
-                _key('Ctrl+T', '\x14'),
-                _key('Ctrl+A', '\x01'),
-                _key('Ctrl+E', '\x05'),
-                _key('Ctrl+U', '\x15'),
-                _key('Ctrl+K', '\x0b'),
-                _key('Ctrl+W', '\x17'),
-                _key('Alt+Enter', '\x1b\r'),
-                _key('Home', '\x1b[H'),
-                _key('End', '\x1b[F'),
-                _key('PgUp', '\x1b[5~'),
-                _key('PgDn', '\x1b[6~'),
-              ]),
+            TerminalShortcuts(
+              groupLabels: [
+                translate('Control keys'),
+                translate('Cursor keys'),
+                translate('Input and editing keys'),
+              ],
+              onKey: _model.sendVirtualKey,
             ),
           ]),
         ),

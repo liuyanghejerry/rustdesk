@@ -788,5 +788,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Receive rate", "接收速率"),
         ("Desktop FPS", "桌面帧率"),
         ("Desktop video paused", "桌面视频已暂停"),
+        ("Control keys", "控制"),
+        ("Cursor keys", "光标"),
+        ("Input and editing keys", "输入/编辑"),
     ].iter().cloned().collect();
 }
