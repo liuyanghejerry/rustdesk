@@ -729,6 +729,21 @@ pub fn session_terminal_stop(session_id: SessionID) {
     session_close_terminal(session_id, 0);
 }
 
+pub fn session_terminal_set_video_displays(
+    session_id: SessionID,
+    displays: Vec<i32>,
+) -> SyncReturn<bool> {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        session.capture_displays(vec![], vec![], displays.clone());
+        for display in displays {
+            session.refresh_video(display as _);
+        }
+        SyncReturn(true)
+    } else {
+        SyncReturn(false)
+    }
+}
+
 // Terminal functions
 pub fn session_open_terminal(session_id: SessionID, terminal_id: i32, rows: u32, cols: u32) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {

@@ -783,5 +783,10 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("To start a voice call, enable \"Audio capture\" on the \"Share screen\" page.", "Per avviare una chiamata vocale, attiva nella pagina 'Condividi schermo' la voce 'Cattura audio'."),
         ("Preview image", ""),
         ("Image path", ""),
+        ("Round-trip latency", ""),
+        ("No latency response", ""),
+        ("Receive rate", ""),
+        ("Desktop FPS", ""),
+        ("Desktop video paused", ""),
     ].iter().cloned().collect();
 }

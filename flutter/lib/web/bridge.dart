@@ -1941,6 +1941,8 @@ class RustdeskImpl {
   Future<void> sessionTerminalStop({required UuidValue sessionId, dynamic hint}) =>
       sessionCloseTerminal(sessionId: sessionId, terminalId: 0);
 
+  bool sessionTerminalSetVideoDisplays({required UuidValue sessionId, required Int32List displays, dynamic hint}) => false;
+
   Future<void> sessionTerminalImage({required UuidValue sessionId, required int requestId, required String path, dynamic hint}) =>
       Future.error(UnsupportedError('Image preview requires the mobile app'));
 

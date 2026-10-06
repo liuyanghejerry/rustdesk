@@ -10,6 +10,7 @@ import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/terminal_model.dart';
 import 'package:flutter_hbb/models/terminal_image_path.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_image_preview.dart';
+import 'package:flutter_hbb/mobile/pages/terminal_network_status.dart';
 import 'package:xterm/xterm.dart';
 
 /// Uses the remote page's authenticated session, without opening another connection.
@@ -30,10 +31,17 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
   Completer<Uint8List>? _imageResult;
   BytesBuilder? _imageBytes;
   PointerDownEvent? _imageTap;
+  late final Int32List _desktopDisplays;
 
   @override
   void initState() {
     super.initState();
+    final pi = widget.ffi.ffiModel.pi;
+    _desktopDisplays = Int32List.fromList(pi.currentDisplay < 0
+        ? List<int>.generate(pi.displays.length, (i) => i)
+        : [pi.currentDisplay]);
+    bind.sessionTerminalSetVideoDisplays(
+        sessionId: widget.ffi.sessionId, displays: Int32List(0));
     _model = TerminalModel(widget.ffi, 0, true);
     widget.ffi.registerTerminalModel(0, _model);
     _model.onClosed = _close;
@@ -177,6 +185,8 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
 
   @override
   void dispose() {
+    bind.sessionTerminalSetVideoDisplays(
+        sessionId: widget.ffi.sessionId, displays: _desktopDisplays);
     if (_imageResult?.isCompleted == false) {
       _imageResult!.completeError(Exception('Terminal closed'));
     }
@@ -217,6 +227,7 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
         backgroundColor: Colors.black,
         body: SafeArea(
           child: Column(children: [
+            TerminalNetworkStatus(ffi: widget.ffi),
             Expanded(
               child: Listener(
                 onPointerDown: (event) => _imageTap = event,
@@ -227,6 +238,7 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
                   focusNode: _focusNode,
                   controller: _model.terminalController,
                   autofocus: true,
+                  keyboardType: TextInputType.multiline,
                   deleteDetection: true,
                   textStyle: const TerminalStyle(fontSize: 14),
                   padding: const EdgeInsets.all(8),

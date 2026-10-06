@@ -3888,6 +3888,7 @@ class QualityMonitorData {
   String? speed;
   String? fps;
   String? delay;
+  DateTime? delayUpdatedAt;
   String? targetBitrate;
   String? codecFormat;
   String? chroma;
@@ -3953,6 +3954,7 @@ class QualityMonitorModel with ChangeNotifier {
       }
       if (evt.containsKey('delay') && (evt['delay'] as String).isNotEmpty) {
         _data.delay = evt['delay'];
+        _data.delayUpdatedAt = DateTime.now();
       }
       if (evt.containsKey('target_bitrate') &&
           (evt['target_bitrate'] as String).isNotEmpty) {
