@@ -3870,6 +3870,7 @@ impl LoginConfigHandler {
             Default::default()
         };
         let mut lr = LoginRequest {
+            terminal_channel: true,
             username: pure_id,
             password: password.into(),
             my_id,

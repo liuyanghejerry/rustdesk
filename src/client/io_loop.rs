@@ -2090,6 +2090,9 @@ impl<T: InvokeUiSession> Remote<T> {
                             Ok(Permission::BlockInput) => {
                                 self.handler.set_permission("block_input", p.enabled);
                             }
+                            Ok(Permission::Terminal) => {
+                                self.handler.set_permission("terminal", p.enabled);
+                            }
                             Ok(Permission::PrivacyMode) => {
                                 self.handler.set_permission("privacy_mode", p.enabled);
                             }

@@ -817,6 +817,28 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg_out));
     }
 
+    pub fn terminal_image(&self, request_id: u32, path: String) {
+        let mut action = TerminalAction::new();
+        action.set_image(base::message_proto::TerminalImageRequest { request_id, path, ..Default::default() });
+        let mut msg = Message::new();
+        msg.set_terminal_action(action);
+        self.send(Data::Message(msg));
+    }
+
+    pub fn terminal_write(&self, data: Vec<u8>) {
+        for chunk in data.chunks(4096) {
+            let mut action = TerminalAction::new();
+            action.set_data(TerminalData {
+                terminal_id: 0,
+                data: bytes::Bytes::copy_from_slice(chunk),
+                ..Default::default()
+            });
+            let mut msg = Message::new();
+            msg.set_terminal_action(action);
+            self.send(Data::Message(msg));
+        }
+    }
+
     pub fn resize_terminal(&self, terminal_id: i32, rows: u32, cols: u32) {
         let mut action = TerminalAction::new();
         action.set_resize(ResizeTerminal {

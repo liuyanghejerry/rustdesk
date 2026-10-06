@@ -239,6 +239,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       );
 
   void onSoftKeyboardChanged(bool visible) {
+    // A page above the remote desktop owns its own keyboard and focus.
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
     if (!visible) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
       // [pi.version.isNotEmpty] -> check ready or not, avoid login without soft-keyboard
@@ -266,6 +268,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       _iosKeyboardWorkaroundTimer = null;
       _timer?.cancel();
       _timer = Timer(kMobileDelaySoftKeyboardFocus, () {
+        if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
             overlays: SystemUiOverlay.values);
         _mobileFocusNode.requestFocus();

@@ -47,6 +47,8 @@ class TerminalModel with ChangeNotifier {
   final String id; // peer id
   final FFI parent;
   final int terminalId;
+  final bool isChannel;
+  void Function(Map<String, dynamic>)? onImageResponse;
   late final Terminal terminal;
   late final TerminalController terminalController;
 
@@ -148,11 +150,16 @@ class TerminalModel with ChangeNotifier {
     if (_terminalOpened) {
       // Send user input to remote terminal
       try {
-        await bind.sessionSendTerminalInput(
-          sessionId: parent.sessionId,
-          terminalId: terminalId,
-          data: data,
-        );
+        if (isChannel) {
+          await bind.sessionTerminalWrite(
+              sessionId: parent.sessionId, data: utf8.encode(data));
+        } else {
+          await bind.sessionSendTerminalInput(
+            sessionId: parent.sessionId,
+            terminalId: terminalId,
+            data: data,
+          );
+        }
       } catch (e) {
         debugPrint('[TerminalModel] Error sending terminal input: $e');
       }
@@ -162,7 +169,8 @@ class TerminalModel with ChangeNotifier {
     }
   }
 
-  TerminalModel(this.parent, [this.terminalId = 0]) : id = parent.id {
+  TerminalModel(this.parent, [this.terminalId = 0, this.isChannel = false])
+      : id = parent.id {
     terminal = RustDeskTerminal(
       maxLines: 10000,
       onClipboardWrite: writeTerminalClipboard,
@@ -203,12 +211,17 @@ class TerminalModel with ChangeNotifier {
         if (_terminalOpened) {
           // Notify remote terminal of resize
           try {
-            await bind.sessionResizeTerminal(
-              sessionId: parent.sessionId,
-              terminalId: terminalId,
-              rows: h,
-              cols: w,
-            );
+            if (isChannel) {
+              await bind.sessionTerminalResize(
+                  sessionId: parent.sessionId, rows: h, cols: w);
+            } else {
+              await bind.sessionResizeTerminal(
+                sessionId: parent.sessionId,
+                terminalId: terminalId,
+                rows: h,
+                cols: w,
+              );
+            }
           } catch (e) {
             debugPrint('[TerminalModel] Error resizing terminal: $e');
           }
@@ -250,14 +263,16 @@ class TerminalModel with ChangeNotifier {
     debugPrint(
         '[TerminalModel] Opening terminal $terminalId, sessionId: ${parent.sessionId}, size: ${cols}x$rows');
     try {
-      await bind
-          .sessionOpenTerminal(
-        sessionId: parent.sessionId,
-        terminalId: terminalId,
-        rows: rows,
-        cols: cols,
-      )
-          .timeout(
+      final opening = isChannel
+          ? bind.sessionTerminalStart(
+              sessionId: parent.sessionId, rows: rows, cols: cols)
+          : bind.sessionOpenTerminal(
+              sessionId: parent.sessionId,
+              terminalId: terminalId,
+              rows: rows,
+              cols: cols,
+            );
+      await opening.timeout(
         const Duration(seconds: 5),
         onTimeout: () {
           throw TimeoutException(
@@ -291,14 +306,13 @@ class TerminalModel with ChangeNotifier {
   }
 
   Future<void> closeTerminal() async {
-    if (_terminalOpened) {
+    if (_terminalOpened || isChannel) {
       try {
-        await bind
-            .sessionCloseTerminal(
-          sessionId: parent.sessionId,
-          terminalId: terminalId,
-        )
-            .timeout(
+        final closing = isChannel
+            ? bind.sessionTerminalStop(sessionId: parent.sessionId)
+            : bind.sessionCloseTerminal(
+                sessionId: parent.sessionId, terminalId: terminalId);
+        await closing.timeout(
           const Duration(seconds: 3),
           onTimeout: () {
             throw TimeoutException(
@@ -311,7 +325,7 @@ class TerminalModel with ChangeNotifier {
         // Continue with cleanup even if close fails
       }
       _terminalOpened = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -403,6 +417,9 @@ class TerminalModel with ChangeNotifier {
     }
 
     switch (type) {
+      case 'image':
+        onImageResponse?.call(evt);
+        break;
       case 'opened':
         _handleTerminalOpened(evt);
         break;
@@ -447,10 +464,10 @@ class TerminalModel with ChangeNotifier {
 
       // Process any buffered input
       _processBufferedInputAsync().then((_) {
-        notifyListeners();
+        if (!_disposed) notifyListeners();
       }).catchError((e) {
         debugPrint('[TerminalModel] Error processing buffered input: $e');
-        notifyListeners();
+        if (!_disposed) notifyListeners();
       });
 
       final persistentSessions =
@@ -478,11 +495,16 @@ class TerminalModel with ChangeNotifier {
 
     for (final data in buffer) {
       try {
-        await bind.sessionSendTerminalInput(
-          sessionId: parent.sessionId,
-          terminalId: terminalId,
-          data: data,
-        );
+        if (isChannel) {
+          await bind.sessionTerminalWrite(
+              sessionId: parent.sessionId, data: utf8.encode(data));
+        } else {
+          await bind.sessionSendTerminalInput(
+            sessionId: parent.sessionId,
+            terminalId: terminalId,
+            data: data,
+          );
+        }
       } catch (e) {
         debugPrint('[TerminalModel] Error sending buffered input: $e');
       }
@@ -623,6 +645,7 @@ class TerminalModel with ChangeNotifier {
 
   void _handleTerminalError(Map<String, dynamic> evt) {
     final String message = evt['message'] ?? 'Unknown error';
+    onImageResponse?.call({'type': 'error', 'error': message});
     _writeToTerminal('\r\nTerminal error: $message\r\n');
   }
 
@@ -638,6 +661,7 @@ class TerminalModel with ChangeNotifier {
     clearAltLock = null;
     onResizeExternal = null;
     onClosed = null;
+    onImageResponse = null;
     onClipboardWriteBlocked = null;
     onClipboardWriteSucceeded = null;
     // Clear buffers to free memory

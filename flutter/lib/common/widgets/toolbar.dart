@@ -10,6 +10,7 @@ import 'package:flutter_hbb/common/widgets/login.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/models/model.dart';
+import 'package:flutter_hbb/mobile/pages/session_terminal_page.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:get/get.dart';
@@ -440,6 +441,15 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
     v.add(TTextMenu(
         child: Text(translate('Reset canvas')),
         onPressed: () => ffi.cursorModel.reset()));
+  }
+
+  if (isMobile && isDefaultConn && pi.features.terminalChannel && perms['terminal'] == true) {
+    v.add(TTextMenu(
+      child: Text(translate('Terminal')),
+      onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => SessionTerminalPage(ffi: ffi),
+      )),
+    ));
   }
 
   // https://github.com/rustdesk/rustdesk/pull/9731

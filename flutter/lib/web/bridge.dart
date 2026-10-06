@@ -1929,6 +1929,21 @@ class RustdeskImpl {
     throw UnimplementedError("sessionTakeScreenshot");
   }
 
+  Future<void> sessionTerminalStart({required UuidValue sessionId, required int rows, required int cols, dynamic hint}) =>
+      sessionOpenTerminal(sessionId: sessionId, terminalId: 0, rows: rows, cols: cols);
+
+  Future<void> sessionTerminalWrite({required UuidValue sessionId, required Uint8List data, dynamic hint}) =>
+      sessionSendTerminalInput(sessionId: sessionId, terminalId: 0, data: utf8.decode(data));
+
+  Future<void> sessionTerminalResize({required UuidValue sessionId, required int rows, required int cols, dynamic hint}) =>
+      sessionResizeTerminal(sessionId: sessionId, terminalId: 0, rows: rows, cols: cols);
+
+  Future<void> sessionTerminalStop({required UuidValue sessionId, dynamic hint}) =>
+      sessionCloseTerminal(sessionId: sessionId, terminalId: 0);
+
+  Future<void> sessionTerminalImage({required UuidValue sessionId, required int requestId, required String path, dynamic hint}) =>
+      Future.error(UnsupportedError('Image preview requires the mobile app'));
+
   Future<void> sessionOpenTerminal(
       {required UuidValue sessionId,
       required int terminalId,

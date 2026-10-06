@@ -882,6 +882,7 @@ impl InvokeUiSession for FlutterHandler {
         let mut features: HashMap<&str, bool> = Default::default();
         for ref f in pi.features.iter() {
             features.insert("privacy_mode", f.privacy_mode);
+            features.insert("terminal_channel", f.terminal_channel);
         }
         // compatible with 1.1.9
         if get_version_number(&pi.version) < get_version_number("1.2.0") {
@@ -1145,6 +1146,14 @@ impl InvokeUiSession for FlutterHandler {
                     ("type", json!("data")),
                     ("terminal_id", json!(data.terminal_id)),
                     ("data", json!(&encoded)),
+                ];
+                self.push_event_("terminal_response", &event_data, &[], &[]);
+            }
+            Some(Union::Image(image)) => {
+                let event_data = vec![
+                    ("type", json!("image")), ("terminal_id", json!(0)),
+                    ("request_id", json!(image.request_id)), ("data", json!(crate::encode64(&image.data))),
+                    ("done", json!(image.done)), ("error", json!(image.error)),
                 ];
                 self.push_event_("terminal_response", &event_data, &[], &[]);
             }

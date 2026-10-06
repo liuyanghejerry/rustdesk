@@ -84,6 +84,7 @@ message LoginRequest {
   string my_platform = 13;
   bytes hwid = 14;
   string avatar = 17;
+  bool terminal_channel = 18;
 }
 
 message Terminal {
@@ -101,6 +102,7 @@ message Features {
   bool privacy_mode = 1;
   bool terminal = 2;
   bool port_forward_mux = 3;
+  bool terminal_channel = 4;
 }
 
 message CodecAbility {
@@ -635,6 +637,7 @@ message PermissionInfo {
     Recording = 6;
     BlockInput = 7;
     PrivacyMode = 8;
+    Terminal = 9;
   }
 
   Permission permission = 1;
@@ -919,12 +922,25 @@ message CloseTerminal {
   int32 terminal_id = 1;
 }
 
+message TerminalImageRequest {
+  uint32 request_id = 1;
+  string path = 2;
+}
+
+message TerminalImage {
+  uint32 request_id = 1;
+  bytes data = 2;
+  bool done = 3;
+  string error = 4;
+}
+
 message TerminalAction {
   oneof union {
     OpenTerminal open = 1;
     TerminalData data = 2;
     ResizeTerminal resize = 3;
     CloseTerminal close = 4;
+    TerminalImageRequest image = 5;
   }
 }
 
@@ -954,6 +970,7 @@ message TerminalResponse {
     TerminalData data = 2;
     TerminalClosed closed = 3;
     TerminalError error = 4;
+    TerminalImage image = 5;
   }
 }
 

@@ -452,6 +452,7 @@ pub struct Connection {
     // Used to filter stale responses (FileBlockFromCM, FileReadDone, etc.) for
     // cancelled or unknown jobs.
     cm_read_job_ids: HashSet<i32>,
+    shell_channel: Option<super::terminal_channel::TerminalChannel>,
     terminal_service_id: String,
     terminal_persistent: bool,
     // Used to avoid too many repeated scope violation warnings.
@@ -650,6 +651,7 @@ impl Connection {
             printer_data: Vec::new(),
             tx_post_seq,
             cm_read_job_ids: HashSet::new(),
+            shell_channel: None,
             terminal_service_id: "".to_owned(),
             terminal_persistent: false,
             scope_violation_messages: HashSet::new(),
@@ -707,6 +709,8 @@ impl Connection {
 
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         std::thread::spawn(move || Self::handle_input(_rx_input, tx_cloned));
+        let mut terminal_permission_timer = crate::rustdesk_interval(time::interval(Duration::from_secs(1)));
+        let mut terminal_permission = conn.terminal_channel_enabled();
         let mut second_timer = crate::rustdesk_interval(time::interval(Duration::from_secs(1)));
 
         #[cfg(feature = "unix-file-copy-paste")]
@@ -1015,6 +1019,25 @@ impl Connection {
                             }
                         }
                         _ => {}
+                    }
+                },
+                _ = terminal_permission_timer.tick() => {
+                    let enabled = conn.terminal_channel_enabled();
+                    if enabled != terminal_permission {
+                        terminal_permission = enabled;
+                        if !enabled { conn.shell_channel.take(); }
+                        if conn.authorized && conn.lr.terminal_channel {
+                            conn.send_permission(Permission::Terminal, enabled).await;
+                        }
+                    }
+                },
+                response = super::terminal_channel::receive(&mut conn.shell_channel) => {
+                    if conn.terminal_channel_enabled() {
+                        let mut msg = Message::new();
+                        msg.set_terminal_response(response);
+                        conn.send(msg).await;
+                    } else {
+                        conn.shell_channel.take();
                     }
                 },
                 res = conn.stream.next() => {
@@ -2076,6 +2099,7 @@ impl Connection {
         pi.username = username;
         pi.sas_enabled = sas_enabled;
         pi.features = Some(Features {
+            terminal_channel: super::terminal_channel::supported(),
             privacy_mode: privacy_mode::is_privacy_mode_supported(),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             terminal,
@@ -2202,6 +2226,11 @@ impl Connection {
         } else if sub_service {
             if !wait_session_id_confirm {
                 self.try_sub_monitor_services();
+            }
+        }
+        if self.is_remote() {
+            if self.lr.terminal_channel {
+                self.send_permission(Permission::Terminal, self.terminal_channel_enabled()).await;
             }
         }
         true
@@ -4056,6 +4085,9 @@ impl Connection {
                     }
                 }
                 Some(message::Union::PortForwardChannel(ch)) => self.handle_port_forward_channel(ch),
+                Some(message::Union::TerminalAction(action)) if self.is_remote() => {
+                    self.handle_shell_channel_action(action).await;
+                }
                 Some(message::Union::TerminalAction(action)) => {
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     allow_err!(self.handle_terminal_action(action).await);
@@ -5240,6 +5272,7 @@ impl Connection {
             return;
         }
         self.closed = true;
+        self.shell_channel.take();
         // If voice A,B -> C, and A,B has voice call
         // B disconnects, C will reset the voice call input.
         //
@@ -6220,6 +6253,69 @@ impl Connection {
         ));
         s.on_subscribe(self.inner.clone());
         self.terminal_generic_service = Some(s);
+    }
+
+    fn terminal_channel_enabled(&self) -> bool {
+        super::terminal_channel::supported()
+            && Config::get_option(keys::OPTION_ENABLE_TERMINAL) == "Y"
+            && Self::permission(keys::OPTION_ENABLE_TERMINAL, &self.control_permissions)
+    }
+
+    async fn handle_shell_channel_action(&mut self, action: TerminalAction) {
+        use base::message_proto::terminal_action::Union;
+        let result = if !self.terminal_channel_enabled() {
+            self.shell_channel.take();
+            Err(hbb_common::anyhow::anyhow!("No permission of terminal"))
+        } else {
+            match action.union.as_ref() {
+                Some(Union::Open(open)) if open.terminal_id == 0 => {
+                    if self.shell_channel.is_none() {
+                        let rows = open.rows;
+                        let cols = open.cols;
+                        match tokio::task::spawn_blocking(move || super::terminal_channel::TerminalChannel::open(rows, cols)).await {
+                            Ok(Ok(channel)) => {
+                                if !self.terminal_channel_enabled() {
+                                    drop(channel);
+                                    self.send_shell_channel_error("No permission of terminal".into()).await;
+                                    return;
+                                }
+                                self.shell_channel = Some(channel);
+                            }
+                            Ok(Err(err)) => { self.send_shell_channel_error(err.to_string()).await; return; }
+                            Err(err) => { self.send_shell_channel_error(err.to_string()).await; return; }
+                        }
+                    }
+                    if let Some(channel) = self.shell_channel.as_ref() {
+                        let mut msg = Message::new();
+                        msg.set_terminal_response(channel.opened());
+                        self.send(msg).await;
+                    }
+                    Ok(())
+                }
+                Some(Union::Close(close)) if close.terminal_id == 0 => {
+                    self.shell_channel.take();
+                    let mut response = TerminalResponse::new();
+                    response.set_closed(TerminalClosed { terminal_id: 0, ..Default::default() });
+                    let mut msg = Message::new();
+                    msg.set_terminal_response(response);
+                    self.send(msg).await;
+                    Ok(())
+                }
+                _ => match self.shell_channel.as_mut() {
+                    Some(channel) => channel.action(action),
+                    None => Err(hbb_common::anyhow::anyhow!("Terminal is not open")),
+                }
+            }
+        };
+        if let Err(err) = result { self.send_shell_channel_error(err.to_string()).await; }
+    }
+
+    async fn send_shell_channel_error(&mut self, message: String) {
+        let mut response = TerminalResponse::new();
+        response.set_error(TerminalError { terminal_id: 0, message, ..Default::default() });
+        let mut msg = Message::new();
+        msg.set_terminal_response(response);
+        self.send(msg).await;
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]

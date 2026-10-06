@@ -705,6 +705,30 @@ pub fn session_send_chat(session_id: SessionID, text: String) {
     }
 }
 
+pub fn session_terminal_start(session_id: SessionID, rows: u32, cols: u32) {
+    session_open_terminal(session_id, 0, rows, cols);
+}
+
+pub fn session_terminal_write(session_id: SessionID, data: Vec<u8>) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        session.terminal_write(data);
+    }
+}
+
+pub fn session_terminal_image(session_id: SessionID, request_id: u32, path: String) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        session.terminal_image(request_id, path);
+    }
+}
+
+pub fn session_terminal_resize(session_id: SessionID, rows: u32, cols: u32) {
+    session_resize_terminal(session_id, 0, rows, cols);
+}
+
+pub fn session_terminal_stop(session_id: SessionID) {
+    session_close_terminal(session_id, 0);
+}
+
 // Terminal functions
 pub fn session_open_terminal(session_id: SessionID, terminal_id: i32, rows: u32, cols: u32) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
