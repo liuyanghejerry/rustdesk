@@ -47,7 +47,10 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
     _model.onImageResponse = _imageResponse;
     widget.ffi.ffiModel.addListener(_permissionChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_model.openTerminal());
+      if (mounted) {
+        unawaited(_model.openTerminal());
+        unawaited(_openKeyboard());
+      }
     });
   }
 
