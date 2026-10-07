@@ -11,6 +11,7 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/mobile/pages/session_terminal_page.dart';
+import 'package:flutter_hbb/mobile/pages/terminal_keyboard_insets.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:get/get.dart';
@@ -451,7 +452,7 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
           showToast(translate('Update the controlled device to use resumable terminals.'));
           return;
         }
-        Navigator.of(context).push(MaterialPageRoute(builder: (_) => SessionTerminalPage(ffi: ffi)));
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => TerminalKeyboardInsets(child: SessionTerminalPage(ffi: ffi))));
       },
     ));
   }
