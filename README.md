@@ -8,6 +8,56 @@
   <b>We need your help to translate this README, <a href="https://github.com/rustdesk/rustdesk/tree/master/src/lang">RustDesk UI</a> and <a href="https://github.com/rustdesk/doc.rustdesk.com">RustDesk Doc</a> to your native language</b>
 </p>
 
+## Mobile terminal fork: demos and differences
+
+This is an experimental fork of [RustDesk](https://github.com/rustdesk/rustdesk), focused on using a remote Linux shell from Android, including command-line coding workflows. It is not an official RustDesk distribution. [中文说明](docs/README-ZH.md#本-fork-的区别与演示)
+
+### Watch the fork in action
+
+These are real Android emulator recordings connected to an isolated Linux VM. The shell commands, CI output and chart are deliberately created demo fixtures; the RTT, receive rate and desktop FPS are live connection values. No physical phone, personal files, real account credentials or AI service are used.
+
+| Terminal, grouped keys and image zoom | Keep a shell and resume it |
+| --- | --- |
+| <img src="docs/assets/mobile-terminal/workflow.gif" width="300" alt="Android terminal: expand shortcut groups, run a sample workflow, preview and zoom a PNG"> | <img src="docs/assets/mobile-terminal/shell-resume.gif" width="300" alt="Keep the shell on exit, reopen it, and verify the same shell PID and environment variable"> |
+| [MP4 walkthrough](docs/assets/mobile-terminal/workflow.mp4) | [MP4 walkthrough](docs/assets/mobile-terminal/shell-resume.mp4) |
+
+[Network interruption and reconnection video](docs/assets/mobile-terminal/network-reconnect.mp4) · [Screenshots, recording notes and reproduction steps](docs/mobile-terminal-demo.md)
+
+### What changes compared with upstream?
+
+The comparison below is against this branch's upstream base, [`c9c0b5d0`](https://github.com/rustdesk/rustdesk/commit/c9c0b5d0efd44b364b31639f3c118e8adc42d98c), rather than a claim about every official release. That base already has a separate terminal connection and terminal session support; this fork adds the following path alongside it.
+
+| Area | Upstream base | This fork |
+| --- | --- | --- |
+| Terminal entry | Separate **Terminal (beta)** connection | **Terminal** inside an authenticated Android desktop connection; reuses its transport |
+| Mobile interaction | Existing standalone terminal UI | Expandable **Control**, **Cursor**, and **Input and editing** groups; all four arrows, Home/End, Ctrl+C/D/Z, Tab and Enter |
+| Image output | Existing terminal rendering | Tap a printed image path, or enter a path, to fetch a preview from the host; double-tap/pinch to zoom |
+| Network feedback | Existing connection quality tools | Terminal status bar with RTT, total receive rate, desktop FPS and stale-latency feedback |
+| Desktop video | Existing desktop behavior | Suspend this connection's desktop video subscription while the terminal is open; restore it on return |
+| Shell lifecycle | Existing standalone session behavior | Keep the same in-session shell after network loss; explicit exit offers **Cancel / Keep and exit / Destroy and exit** |
+| Input delivery | Existing terminal input path | Acknowledged, ordered chunks for this channel; abort remaining input after a delivery failure; mobile IME activation on entry |
+
+The original standalone terminal path remains available. CLI coding agents are installed and run on the remote machine; this fork does not bundle an AI model, agent or API credentials.
+
+### Try it
+
+1. Update both the Android controller and the Linux controlled device to compatible fork builds. Upstream downloads linked further below do **not** contain these fork features.
+2. Run the controlled device's server as the logged-in user and enable its terminal permission. The in-session shell refuses to run as root.
+3. Connect to the desktop, open **⋮ → Terminal**, then type, paste or use the grouped shortcut buttons.
+4. Click an image path such as `./build-report.png` to preview it. Use Back to choose whether the shell should remain running.
+
+No `hbbs`/`hbbr` changes are required. Validation currently covers Android → Linux; other controller/host combinations are not claimed as tested.
+
+### Current limits
+
+- Shell retention survives network disconnection, not a restart of the controlled device's RustDesk process. Detached shells keep at most the latest 1 MiB of output each, with a truncation message; up to 100 detached shells are retained.
+- Reconnection still requires authentication and terminal permission. Input interrupted by a connection failure is not automatically resent, to avoid duplicate commands.
+- Desktop FPS can be zero while the terminal and image channel remain usable. The receive rate is for the whole connection, not just the terminal, and the emulator RTT is not an Internet performance benchmark.
+- Local fork builds have triggered a Vivo “privacy information theft” warning, including the signed Release build. The cause is unresolved; changing build mode/signature did not remove it. This fork has not been certified by Vivo or an app store.
+
+The remaining project information and download links below are upstream references.
+
+
 > [!Caution]
 > **Misuse Disclaimer:** <br>
 > The developers of RustDesk do not condone or support any unethical or illegal use of this software. Misuse, such as unauthorized access, control or invasion of privacy, is strictly against our guidelines. The authors are not responsible for any misuse of the application.

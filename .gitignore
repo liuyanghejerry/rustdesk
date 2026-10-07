@@ -15,6 +15,7 @@ src/version.rs
 cert.pfx
 *.bak
 *png
+!/docs/assets/mobile-terminal/*.png
 *svg
 *jpg
 sciter.dll

@@ -8,6 +8,48 @@
   [<a href="../README.md">English</a>] | [<a href="README-UA.md">Українська</a>] | [<a href="README-CS.md">česky</a>] | [<a href="README-HU.md">Magyar</a>] | [<a href="README-ES.md">Español</a>] | [<a href="README-FA.md">فارسی</a>] | [<a href="README-FR.md">Français</a>] | [<a href="README-DE.md">Deutsch</a>] | [<a href="README-PL.md">Polski</a>] | [<a href="README-ID.md">Indonesian</a>] | [<a href="README-FI.md">Suomi</a>] | [<a href="README-ML.md">മലയാളം</a>] | [<a href="README-JP.md">日本語</a>] | [<a href="README-NL.md">Nederlands</a>] | [<a href="README-IT.md">Italiano</a>] | [<a href="README-RU.md">Русский</a>] | [<a href="README-PTBR.md">Português (Brasil)</a>] | [<a href="README-EO.md">Esperanto</a>] | [<a href="README-KR.md">한국어</a>] | [<a href="README-AR.md">العربي</a>] | [<a href="README-VN.md">Tiếng Việt</a>] | [<a href="README-GR.md">Ελληνικά</a>]<br>
 </p>
 
+## 本 fork 的区别与演示
+
+这是 [RustDesk](https://github.com/rustdesk/rustdesk) 的实验性 fork，主要改善 Android 控制 Linux 时的终端体验，便于使用远程命令行和已安装的 CLI 编程工具，并非官方发行版。
+
+### 实际演示
+
+视频和截图来自 Android 模拟器与隔离的 Linux 虚拟机之间的真实连接，不依赖真机。示例命令、CI 输出及图表均为专门生成的演示内容；延迟、接收速率和桌面 FPS 是连接的实时读数。没有使用真实项目、账号密码或 AI 服务。
+
+| 终端、快捷键分组和图片放大 | 保留 shell 后续接 |
+| --- | --- |
+| <img src="assets/mobile-terminal/workflow.gif" width="300" alt="展开快捷键分组、执行示例命令、预览并放大终端中的 PNG 图片"> | <img src="assets/mobile-terminal/shell-resume.gif" width="300" alt="选择保留并退出，重新打开终端，检查相同的 shell PID 和环境变量"> |
+| [观看 MP4](assets/mobile-terminal/workflow.mp4) | [观看 MP4](assets/mobile-terminal/shell-resume.mp4) |
+
+[网络中断与重连视频](assets/mobile-terminal/network-reconnect.mp4) · [截图、录制说明与复现步骤](mobile-terminal-demo.md)
+
+### 与官方基线的区别
+
+对比以本分支的 upstream 基线 [`c9c0b5d0`](https://github.com/rustdesk/rustdesk/commit/c9c0b5d0efd44b364b31639f3c118e8adc42d98c) 为准，不代表所有官方版本。该基线已经有独立的 **Terminal (beta)** 连接和终端会话功能；我们新增的是桌面连接内的终端路径。
+
+| 功能 | 官方基线 | 本 fork |
+| --- | --- | --- |
+| 终端入口 | 独立的 Terminal (beta) 连接 | 在 Android 已认证的桌面连接内打开 Terminal，复用连接 |
+| 手机操作 | 既有独立终端界面 | 控制、光标、输入与编辑三组可展开按钮，包含完整方向键、Home/End、Ctrl+C/D/Z、Tab 与 Enter |
+| 图片输出 | 既有终端渲染 | 点击输出中的图片路径，或手动输入路径，从被控端读取图片并预览、双击或双指放大 |
+| 网络反馈 | 既有连接质量工具 | 终端状态栏显示 RTT、总接收速率、桌面 FPS，以及延迟回复过期状态 |
+| 桌面视频 | 既有桌面行为 | 进入终端时暂停当前连接的桌面视频订阅，返回桌面时恢复 |
+| shell 生命周期 | 既有独立会话行为 | 网络断开保留当前 shell；主动退出可取消、保留或销毁 |
+| 输入传输 | 既有终端输入路径 | 新通道按顺序分块、等待写入确认；失败后停止剩余输入；进入终端自动启用输入法 |
+
+既有独立终端路径保留。CLI 编程代理在远程机器上自行安装运行，本 fork 没有内置 AI 模型、代理或 API 密钥。
+
+### 安装与使用
+
+主控 Android 和被控 Linux 都需要兼容的 fork 版本，下方官方版下载链接不包含这些改动。被控端需要运行登录用户的服务进程并开启终端权限；新终端拒绝提供 root shell。连接桌面后点击 **⋮ → Terminal** 即可使用。不需要更换 `hbbs`/`hbbr` 服务端；当前验证范围为 Android → Linux。
+
+网络断开可续接，但被控端 RustDesk 进程重启后不能保留 shell。每个保留 shell 只缓存最近 1 MiB 输出，超出会提示，最多保留 100 个。重连仍需认证和权限，断线期间未确认的输入不会自动重发。接收速率包含整个连接，模拟器的低 RTT 不代表公网表现。
+
+已知问题：本地构建曾被 Vivo 判定为“隐私信息窃取”，专用签名的 Release 版仍有提示，原因尚未确定。本 fork 尚未获得 Vivo 或应用商店认证。
+
+下方保留的是 upstream 项目信息与下载入口。
+
+
 > [!CAUTION]
 > **免责声明:** <br>
 > RustDesk 的开发人员不纵容或支持任何不道德或非法的软件使用行为。滥用行为，例如未经授权的访问、控制或侵犯隐私，严格违反我们的准则。作者对应用程序的任何滥用行为概不负责。
