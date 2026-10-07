@@ -1,0 +1,68 @@
+name: macOS terminal host
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/macos-terminal-host]
+    paths:
+      - src/server/terminal_channel.rs
+      - src/server/terminal_resources.rs
+      - src/server/terminal_channel_sessions.rs
+      - libs/base/protos/message.proto
+      - .github/workflows/macos-terminal-host.yml
+
+permissions:
+  contents: read
+
+jobs:
+  native-host-tests:
+    name: Native host tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: '1.81'
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          key: macos-terminal-host-${{ matrix.os }}
+      - name: Compile and test the actual host modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_dir="$RUNNER_TEMP/terminal-host-check"
+          mkdir -p "$check_dir/src"
+          cp Cargo.lock "$check_dir/Cargo.lock"
+          cat > "$check_dir/Cargo.toml" <<EOF
+          [package]
+          name = "terminal-host-check"
+          version = "0.1.0"
+          edition = "2021"
+          [features]
+          default = ["terminal-channel"]
+          terminal-channel = []
+          [dependencies]
+          base = { path = "$GITHUB_WORKSPACE/libs/base" }
+          hbb_common = { path = "$GITHUB_WORKSPACE/libs/hbb_common" }
+          portable-pty = { git = "https://github.com/rustdesk-org/wezterm", branch = "rustdesk/pty_based_0.8.1", package = "portable-pty" }
+          [patch.crates-io]
+          tungstenite = { git = "https://github.com/rustdesk-org/tungstenite-rs", rev = "efce47e5364f00a63302cf07ab1fb13ded478914" }
+          EOF
+          cat > "$check_dir/src/lib.rs" <<EOF
+          #[path = "$GITHUB_WORKSPACE/src/server/terminal_channel.rs"]
+          pub mod terminal_channel;
+          #[path = "$GITHUB_WORKSPACE/src/server/terminal_channel_sessions.rs"]
+          pub mod terminal_channel_sessions;
+          #[path = "$GITHUB_WORKSPACE/src/server/terminal_resources.rs"]
+          pub mod terminal_resources;
+          EOF
+          cargo test --manifest-path "$check_dir/Cargo.toml" --lib -- --nocapture
+          cargo check --manifest-path "$check_dir/Cargo.toml" --no-default-features

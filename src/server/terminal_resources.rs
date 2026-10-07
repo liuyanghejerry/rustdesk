@@ -19,7 +19,10 @@ impl ResourceMonitor {
     }
 
     pub async fn receive(&mut self) -> TerminalResourceUsage {
-        if !cfg!(all(feature = "terminal-channel", target_os = "linux")) {
+        if !cfg!(all(
+            feature = "terminal-channel",
+            any(target_os = "linux", target_os = "macos")
+        )) {
             return std::future::pending().await;
         }
         if self.sample.is_none() {
@@ -62,7 +65,39 @@ fn read_usage() -> TerminalResourceUsage {
         }
         return usage;
     }
-    #[cfg(not(all(feature = "terminal-channel", target_os = "linux")))]
+    #[cfg(all(feature = "terminal-channel", target_os = "macos"))]
+    {
+        use hbb_common::{
+            libc,
+            sysinfo::{RefreshKind, System, SystemExt},
+        };
+        let system = System::new_with_specifics(RefreshKind::new().with_memory());
+        let mut usage = TerminalResourceUsage::default();
+        let total = system.total_memory();
+        let used = system.used_memory();
+        // A failed VM statistics read leaves used_memory at zero in sysinfo.
+        if total > 0 && used > 0 && used <= total {
+            usage.memory_total = total;
+            usage.memory_used = used;
+        }
+        let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        if unsafe { libc::statvfs(b"/\0".as_ptr().cast(), stat.as_mut_ptr()) } == 0 {
+            let stat = unsafe { stat.assume_init() };
+            if let Some((total, used)) = disk_usage(
+                stat.f_blocks as u64,
+                stat.f_bfree as u64,
+                stat.f_frsize as u64,
+            ) {
+                usage.disk_total = total;
+                usage.disk_used = used;
+            }
+        }
+        return usage;
+    }
+    #[cfg(not(all(
+        feature = "terminal-channel",
+        any(target_os = "linux", target_os = "macos")
+    )))]
     TerminalResourceUsage::default()
 }
 
@@ -85,7 +120,13 @@ fn memory_usage(text: &str) -> Option<(u64, u64)> {
     Some((total, total.checked_sub(available)?))
 }
 
-#[cfg(any(test, all(feature = "terminal-channel", target_os = "linux")))]
+#[cfg(any(
+    test,
+    all(
+        feature = "terminal-channel",
+        any(target_os = "linux", target_os = "macos")
+    )
+))]
 fn disk_usage(blocks: u64, free: u64, block_size: u64) -> Option<(u64, u64)> {
     Some((
         blocks.checked_mul(block_size)?,
@@ -109,7 +150,10 @@ mod tests {
         assert_eq!(disk_usage(u64::MAX, 0, 4096), None);
     }
 
-    #[cfg(all(feature = "terminal-channel", target_os = "linux"))]
+    #[cfg(all(
+        feature = "terminal-channel",
+        any(target_os = "linux", target_os = "macos")
+    ))]
     #[tokio::test]
     async fn samples_real_host_without_repeating_during_quiet_interval() {
         let mut monitor = ResourceMonitor::new();

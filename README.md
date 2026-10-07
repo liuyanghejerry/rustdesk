@@ -59,6 +59,14 @@ The original standalone terminal path remains available. CLI coding agents are i
 
 No `hbbs`/`hbbr` changes are required. Validation currently covers Android → Linux; other controller/host combinations are not claimed as tested.
 
+### macOS controlled host branch
+
+`feature/macos-terminal-host` adds experimental macOS host support to this fork. The Android controller is unchanged. The host uses a native PTY for the logged-in user's shell, resolves relative image paths through `proc_pidinfo` instead of Linux `/proc`, and reports RAM and root filesystem usage every five seconds. Existing authentication, terminal permission and shell retention rules apply; `hbbs`/`hbbr` do not need changes.
+
+The [native host workflow](.github/workflows/macos-terminal-host.yml) checks these modules on Apple Silicon and Intel, including PTY input/resize, working-directory resolution, resource sampling and feature-disabled compilation. The recordings above remain Android → Linux demonstrations. A complete macOS app/DMG build, signing/notarization and Android → macOS end-to-end testing are still required before calling this a tested macOS release.
+
+On macOS, RAM uses the existing `sysinfo` library's VM counters; it is not an Activity Monitor memory-pressure reading. Disk usage counts allocated space on `/`; APFS shared space, snapshots and purgeable space can differ from Finder's display. Both endpoints need compatible fork builds for resource readings.
+
 ### Current limits
 
 - Shell retention survives network disconnection, not a restart of the controlled device's RustDesk process. Detached shells keep at most the latest 1 MiB of output each, with a truncation message; up to 100 detached shells are retained.

@@ -58,6 +58,14 @@
 
 资源状态显示的是被控 Linux 的使用百分比和已用/总量 GiB。RAM 使用量不含内核标记为可用的内存；磁盘统计根文件系统 `/` 的已分配空间，不包括所有挂载盘，也不跟随 shell 当前目录。读取失败、断网或过期时显示“—”。这项读数需要同时更新主控端与被控端，旧版被控端仍可使用终端，但没有资源读数。
 
+### macOS 被控端分支
+
+`feature/macos-terminal-host` 专门增加实验性的 macOS 被控端支持，Android 主控界面沿用现有实现。被控端通过原生 PTY 运行登录用户的 shell，使用 `proc_pidinfo` 解析相对图片路径，并每五秒报告 RAM 和根文件系统使用量。认证、终端权限和 shell 保留规则保持一致，不需要更换 `hbbs`/`hbbr`。
+
+[原生被控端检查](../.github/workflows/macos-terminal-host.yml) 覆盖 Apple Silicon 和 Intel，包括 PTY 输入及尺寸调整、工作目录解析、资源采样和关闭功能后的编译。上面的演示仍来自 Android → Linux；完整 macOS 应用/DMG 构建、签名及公证、Android → macOS 端到端实测仍待完成，暂不能视为已验证的 macOS 发行版。
+
+macOS RAM 采用既有 `sysinfo` 库的 VM 计数，不是“活动监视器”的内存压力指标。磁盘显示 `/` 的已分配空间，APFS 共享空间、快照和可清除空间可能使其与 Finder 的显示不同。资源读数需要两端都使用兼容的 fork 版本。
+
 已知问题：本地构建曾被 Vivo 判定为“隐私信息窃取”，专用签名的 Release 版仍有提示，原因尚未确定。本 fork 尚未获得 Vivo 或应用商店认证。
 
 下方保留的是 upstream 项目信息与下载入口。

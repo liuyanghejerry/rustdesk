@@ -363,7 +363,7 @@ fn read_image(
             path
         } else {
             let cwd = pid
-                .and_then(|p| std::fs::read_link(format!("/proc/{p}/cwd")).ok())
+                .and_then(|p| shell_working_directory(p).ok())
                 .ok_or_else(|| {
                     anyhow!("Cannot resolve the shell working directory; use an absolute path")
                 })?;
@@ -406,6 +406,109 @@ fn read_image(
         if n == 0 {
             return Ok(());
         }
+    }
+}
+
+#[cfg(all(feature = "terminal-channel", target_os = "macos"))]
+fn shell_working_directory(pid: u32) -> Result<std::path::PathBuf> {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+    let pid = i32::try_from(pid)?;
+    if pid <= 0 {
+        bail!("Invalid shell PID");
+    }
+    let mut info = std::mem::MaybeUninit::<libc::proc_vnodepathinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>();
+    let read = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size as i32,
+        )
+    };
+    if read != size as i32 {
+        bail!("Cannot read shell working directory");
+    }
+    let info = unsafe { info.assume_init() };
+    // Bound the scan to the native path buffer, including its terminating NUL.
+    let path = unsafe {
+        std::slice::from_raw_parts(
+            info.pvi_cdir.vip_path.as_ptr().cast::<u8>(),
+            std::mem::size_of_val(&info.pvi_cdir.vip_path),
+        )
+    };
+    let end = path
+        .iter()
+        .position(|&b| b == 0)
+        .ok_or_else(|| anyhow!("Invalid shell working directory"))?;
+    let path = std::path::PathBuf::from(OsString::from_vec(path[..end].to_vec()));
+    if !path.is_absolute() {
+        bail!("Invalid shell working directory");
+    }
+    Ok(path)
+}
+
+#[cfg(all(
+    feature = "terminal-channel",
+    unix,
+    not(any(target_os = "macos", target_os = "android", target_os = "ios"))
+))]
+fn shell_working_directory(pid: u32) -> Result<std::path::PathBuf> {
+    Ok(std::fs::read_link(format!("/proc/{pid}/cwd"))?)
+}
+
+#[cfg(all(test, feature = "terminal-channel", target_os = "macos"))]
+mod macos_tests {
+    use super::*;
+
+    #[test]
+    fn resolves_current_directory_without_procfs() {
+        assert_eq!(
+            shell_working_directory(std::process::id())
+                .unwrap()
+                .canonicalize()
+                .unwrap(),
+            std::env::current_dir().unwrap().canonicalize().unwrap()
+        );
+        assert!(shell_working_directory(0).is_err());
+        assert!(shell_working_directory(u32::MAX).is_err());
+    }
+
+    #[tokio::test]
+    async fn opens_resizes_and_receives_a_native_shell() {
+        let mut session = TerminalChannel::open(24, 80).unwrap();
+        let mut action = TerminalAction::new();
+        action.set_resize(base::message_proto::ResizeTerminal {
+            terminal_id: 0,
+            rows: 30,
+            cols: 90,
+            ..Default::default()
+        });
+        session.action(action).unwrap();
+        let mut action = TerminalAction::new();
+        action.set_data(TerminalData {
+            terminal_id: 0,
+            data: b"printf 'macos-native-shell-ok\\n'\r".to_vec().into(),
+            ..Default::default()
+        });
+        session.action(action).unwrap();
+        let mut channel = Some(session);
+        let mut data = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                if let Some(base::message_proto::terminal_response::Union::Data(chunk)) =
+                    receive(&mut channel).await.union
+                {
+                    data.extend_from_slice(&chunk.data);
+                    if data.windows(23).any(|s| s == b"macos-native-shell-ok\r\n") {
+                        break;
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap();
     }
 }
 
