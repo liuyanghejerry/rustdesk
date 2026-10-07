@@ -69,7 +69,7 @@ fn read_usage() -> TerminalResourceUsage {
     {
         use hbb_common::{
             libc,
-            sysinfo::{RefreshKind, System, SystemExt},
+            sysinfo::{RefreshKind, System},
         };
         let system = System::new_with_specifics(RefreshKind::new().with_memory());
         let mut usage = TerminalResourceUsage::default();
