@@ -977,6 +977,13 @@ message TerminalInputAck {
   string error = 2;
 }
 
+message TerminalResourceUsage {
+  uint64 memory_total = 1;
+  uint64 memory_used = 2;
+  uint64 disk_total = 3;
+  uint64 disk_used = 4;
+}
+
 message TerminalResponse {
   oneof union {
     TerminalOpened opened = 1;
@@ -985,6 +992,7 @@ message TerminalResponse {
     TerminalError error = 4;
     TerminalImage image = 5;
     TerminalInputAck input_ack = 6;
+    TerminalResourceUsage resources = 7;
   }
 }
 

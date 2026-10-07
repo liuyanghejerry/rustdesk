@@ -1151,6 +1151,13 @@ impl InvokeUiSession for FlutterHandler {
                 ];
                 self.push_event_("terminal_response", &event_data, &[], &[]);
             }
+            Some(Union::Resources(usage)) => {
+                self.push_event_("terminal_response", &[
+                    ("type", json!("resources")), ("terminal_id", json!(0)),
+                    ("memory_total", json!(usage.memory_total)), ("memory_used", json!(usage.memory_used)),
+                    ("disk_total", json!(usage.disk_total)), ("disk_used", json!(usage.disk_used)),
+                ], &[], &[]);
+            }
             Some(Union::InputAck(ack)) => {
                 self.push_event_("terminal_response", &[
                     ("type", json!("input_ack")), ("terminal_id", json!(0)),

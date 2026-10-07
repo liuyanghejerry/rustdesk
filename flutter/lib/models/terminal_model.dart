@@ -15,6 +15,7 @@ import 'model.dart';
 import 'platform_model.dart';
 import 'rustdesk_terminal.dart';
 import 'terminal_copy_shortcut.dart';
+import 'terminal_resource_usage.dart';
 import 'terminal_mouse_handler.dart';
 
 bool canConfigureTerminalClipboardPermission({
@@ -51,6 +52,7 @@ class TerminalModel with ChangeNotifier {
   final FFI parent;
   final int terminalId;
   final bool isChannel;
+  TerminalResourceUsage? resourceUsage;
   Future<void> _channelInputQueue = Future.value();
   Completer<void>? _inputAck;
   int _inputSequence = DateTime.now().microsecondsSinceEpoch & 0xffffffff;
@@ -223,6 +225,7 @@ class TerminalModel with ChangeNotifier {
   }
 
   void _channelDisconnected() {
+    resourceUsage = null;
     _inputGeneration++;
     _terminalOpened = false;
     _resumeRetry?.cancel();
@@ -231,6 +234,7 @@ class TerminalModel with ChangeNotifier {
       _inputAck!
           .completeError(StateError('Connection lost; input was not retried'));
     }
+    if (!_disposed) notifyListeners();
   }
 
   TerminalModel(this.parent, [this.terminalId = 0, this.isChannel = false])
@@ -528,6 +532,12 @@ class TerminalModel with ChangeNotifier {
     }
 
     switch (type) {
+      case 'resources':
+        if (isChannel && !_disposed) {
+          resourceUsage = TerminalResourceUsage.fromEvent(evt);
+          notifyListeners();
+        }
+        break;
       case 'input_ack':
         if (int.tryParse('${evt['sequence']}') == _inputSequence &&
             _inputAck?.isCompleted == false) {

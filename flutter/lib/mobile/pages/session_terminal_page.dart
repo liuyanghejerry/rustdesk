@@ -270,7 +270,7 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
           backgroundColor: Colors.black,
           body: SafeArea(
             child: Column(children: [
-              TerminalNetworkStatus(ffi: widget.ffi),
+              TerminalNetworkStatus(ffi: widget.ffi, terminal: _model),
               Expanded(
                 child: Listener(
                   onPointerDown: (event) => _imageTap = event,

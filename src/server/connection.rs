@@ -713,6 +713,7 @@ impl Connection {
         std::thread::spawn(move || Self::handle_input(_rx_input, tx_cloned));
         let mut terminal_permission_timer = crate::rustdesk_interval(time::interval(Duration::from_secs(1)));
         let mut terminal_permission = conn.terminal_channel_enabled();
+        let mut terminal_resources = super::terminal_resources::ResourceMonitor::new();
         let mut second_timer = crate::rustdesk_interval(time::interval(Duration::from_secs(1)));
 
         #[cfg(feature = "unix-file-copy-paste")]
@@ -1032,6 +1033,14 @@ impl Connection {
                             conn.send_permission(Permission::Terminal, enabled).await;
                         }
                     }
+                },
+                usage = terminal_resources.receive(), if conn.authorized && conn.shell_channel.is_some() && conn.terminal_channel_enabled() => {
+                    if !conn.terminal_channel_enabled() { continue; }
+                    let mut response = base::message_proto::TerminalResponse::new();
+                    response.set_resources(usage);
+                    let mut msg = Message::new();
+                    msg.set_terminal_response(response);
+                    conn.send(msg).await;
                 },
                 response = super::terminal_channel::receive(&mut conn.shell_channel) => {
                     if conn.terminal_channel_enabled() {

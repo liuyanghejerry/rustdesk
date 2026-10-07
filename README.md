@@ -43,6 +43,7 @@ The comparison below is against this branch's upstream base, [`c9c0b5d0`](https:
 | Mobile interaction | Existing standalone terminal UI | Expandable **Control**, **Cursor**, and **Input and editing** groups; all four arrows, Home/End, Ctrl+C/D/Z, Tab and Enter |
 | Image output | Existing terminal rendering | Tap a printed image path, or enter a path, to fetch a preview from the host; double-tap/pinch to zoom |
 | Network feedback | Existing connection quality tools | Terminal status bar with RTT, total receive rate, desktop FPS and stale-latency feedback |
+| Host resources | Existing host tools | Remote Linux RAM and root filesystem (`/`) usage at the top of the terminal, refreshed every five seconds |
 | Desktop video | Existing desktop behavior | Suspend this connection's desktop video subscription while the terminal is open; restore it on return |
 | Shell lifecycle | Existing standalone session behavior | Keep the same in-session shell after network loss; explicit exit offers **Cancel / Keep and exit / Destroy and exit** |
 | Input delivery | Existing terminal input path | Acknowledged, ordered chunks for this channel; abort remaining input after a delivery failure; mobile IME activation on entry |
@@ -63,6 +64,7 @@ No `hbbs`/`hbbr` changes are required. Validation currently covers Android → L
 - Shell retention survives network disconnection, not a restart of the controlled device's RustDesk process. Detached shells keep at most the latest 1 MiB of output each, with a truncation message; up to 100 detached shells are retained.
 - Reconnection still requires authentication and terminal permission. Input interrupted by a connection failure is not automatically resent, to avoid duplicate commands.
 - Desktop FPS can be zero while the terminal and image channel remain usable. The receive rate is for the whole connection, not just the terminal, and the emulator RTT is not an Internet performance benchmark.
+- Resource indicators show the controlled Linux host, not the phone: used/total GiB and percentage. RAM usage excludes memory the [Linux kernel reports as available](https://www.kernel.org/doc/html/latest/filesystems/proc.html); disk usage counts allocated space on `/`, not every mounted drive or the shell's current directory. Missing, disconnected or stale readings show “—”. Update both the Android controller and Linux host for these readings; older hosts remain usable without them.
 - Local fork builds have triggered a Vivo “privacy information theft” warning, including the signed Release build. The cause is unresolved; changing build mode/signature did not remove it. This fork has not been certified by Vivo or an app store.
 
 The remaining project information and download links below are upstream references.
