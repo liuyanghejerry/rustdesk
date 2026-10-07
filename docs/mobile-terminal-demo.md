@@ -4,7 +4,26 @@
 
 These recordings show the actual fork UI and an authenticated connection, captured on 2026-10-07 from feature commit `38502eaf9`. The controller is an Android 35 x86_64 emulator at 720 × 1280; the host is an isolated Linux VM running RustDesk as an ordinary user. No physical phone is required. The commands and build chart are sample fixtures, not a real CI run or AI benchmark. Videos have no audio.
 
-这些素材来自真实模拟器操作与远程 shell，不是界面模型。演示工作区及图表均为样例，网络读数来自实际连接。没有录入个人项目或真实账号凭据。
+这些素材来自真实模拟器操作与远程 shell，不是界面模型。基础视频中的工作区及图表均为样例；下方新增编程会话使用真实模型调用。网络读数来自实际连接，没有录入个人项目，认证信息没有进入截图。
+
+## Actual Codex and Kimi Code sessions / 真实编程会话
+
+Captured on 2026-10-07 through the same Android emulator and isolated Linux host. Codex CLI **0.160.0 / GPT-6.1-Sol** and Kimi Code CLI **2.1.1 / GLM-5.3** worked in separate scratch directories. The Kimi screenshot demonstrates the **Kimi Code application with a configured third-party model**, not a comparison of Kimi and OpenAI models. Both CLIs actually wrote Python files and ran three tests successfully; the generated tests were independently rerun and passed. These screenshots are not a quality or latency benchmark.
+
+本次新增截图展示真实的模型生成结果，不是预先编写的 CI 输出。两款工具各自生成代码与测试，随后分别复跑三个测试，均通过。只使用样例文件；账号配置放在项目目录外，录制从登录配置完成后开始。CLI 通过 tmux 运行，可从手机终端查看其交互画面。
+
+Prompt used in both projects:
+
+```text
+Create greet.py: greet(name) returns 'Hello, NAME!' (strip, empty=world).
+Add 3 unittest cases, run tests, summarize. Only work in this folder.
+```
+
+| Codex result / 生成结果 | Kimi Code result / 生成结果 |
+| --- | --- |
+| [<img src="assets/mobile-terminal/codex-result.png" width="300" alt="Codex test diff and successful test summary">](assets/mobile-terminal/codex-result.png) | [<img src="assets/mobile-terminal/kimi-code-result.png" width="300" alt="Kimi Code generated Python tests and successful test summary">](assets/mobile-terminal/kimi-code-result.png) |
+
+To repeat, install and authenticate the CLIs on your own controlled Linux host, create two disposable folders, and send the prompt from Terminal. If your network needs a proxy, set `https_proxy` before starting Codex; the demonstration verified both `https_proxy` and `HTTPS_PROXY` in the resumed process. Keep credentials outside the sample folders and authentication screens outside your captures. See the [official Codex CLI documentation](https://learn.chatgpt.com/docs/codex/cli) and [Kimi Code documentation](https://moonshotai.github.io/kimi-code/) for each tool's setup. RustDesk does not install or configure either CLI.
 
 ## Walkthroughs / 视频
 

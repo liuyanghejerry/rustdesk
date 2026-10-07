@@ -14,7 +14,7 @@
 
 ### 实际演示
 
-视频和截图来自 Android 模拟器与隔离的 Linux 虚拟机之间的真实连接，不依赖真机。示例命令、CI 输出及图表均为专门生成的演示内容；延迟、接收速率和桌面 FPS 是连接的实时读数。没有使用真实项目、账号密码或 AI 服务。
+视频和截图来自 Android 模拟器与隔离的 Linux 虚拟机之间的真实连接，不依赖真机。视频中的示例命令、CI 输出及图表均为专门生成的演示内容；延迟、接收速率和桌面 FPS 是连接的实时读数。下方新增编程截图使用真实模型调用和独立样例项目，认证过程不进入截图，没有使用个人项目文件。
 
 | 终端、快捷键分组和图片放大 | 保留 shell 后续接 |
 | --- | --- |
@@ -22,6 +22,16 @@
 | [观看 MP4](assets/mobile-terminal/workflow.mp4) | [观看 MP4](assets/mobile-terminal/shell-resume.mp4) |
 
 [网络中断与重连视频](assets/mobile-terminal/network-reconnect.mp4) · [截图、录制说明与复现步骤](mobile-terminal-demo.md)
+
+#### Codex / Kimi Code 实际编程
+
+两款工具都在远程 Linux 虚拟机中实际生成了 `greet.py` 和三个 Python 单元测试，并运行通过。这些是 Android 终端里看到的真实 CLI 画面，没有伪造模型回复。Codex CLI 0.160.0 使用 GPT-6.1-Sol；Kimi Code CLI 2.1.1 沿用本地配置的 GLM-5.3，并非 Kimi 模型。CLI 工具和账号需要用户另外安装配置。
+
+| Codex：生成代码与测试通过 | Kimi Code：生成代码与测试通过 |
+| --- | --- |
+| [<img src="assets/mobile-terminal/codex-result.png" width="300" alt="Codex 实际生成的 Python 测试 diff 和三个通过的测试">](assets/mobile-terminal/codex-result.png) | [<img src="assets/mobile-terminal/kimi-code-result.png" width="300" alt="Kimi Code 实际生成的 Python 代码和测试通过结果">](assets/mobile-terminal/kimi-code-result.png) |
+
+[提示词与截图说明](mobile-terminal-demo.md#actual-codex-and-kimi-code-sessions--真实编程会话)
 
 ### 与官方基线的区别
 

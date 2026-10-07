@@ -14,7 +14,7 @@ This is an experimental fork of [RustDesk](https://github.com/rustdesk/rustdesk)
 
 ### Watch the fork in action
 
-These are real Android emulator recordings connected to an isolated Linux VM. The shell commands, CI output and chart are deliberately created demo fixtures; the RTT, receive rate and desktop FPS are live connection values. No physical phone, personal files, real account credentials or AI service are used.
+These are real Android emulator recordings connected to an isolated Linux VM. The shell commands, CI output and chart in the videos are deliberately created demo fixtures; the RTT, receive rate and desktop FPS are live connection values. The additional coding screenshots below show actual model calls in disposable projects, with authentication kept off-screen. No physical phone or personal project files are used.
 
 | Terminal, grouped keys and image zoom | Keep a shell and resume it |
 | --- | --- |
@@ -22,6 +22,16 @@ These are real Android emulator recordings connected to an isolated Linux VM. Th
 | [MP4 walkthrough](docs/assets/mobile-terminal/workflow.mp4) | [MP4 walkthrough](docs/assets/mobile-terminal/shell-resume.mp4) |
 
 [Network interruption and reconnection video](docs/assets/mobile-terminal/network-reconnect.mp4) · [Screenshots, recording notes and reproduction steps](docs/mobile-terminal-demo.md)
+
+#### Actual CLI coding sessions
+
+Both tools generated `greet.py` and three Python unit tests, then ran the tests successfully on the remote Linux VM. These are real CLI screens viewed through the Android terminal, not simulated AI responses. Codex CLI 0.160.0 uses GPT-6.1-Sol; Kimi Code CLI 2.1.1 uses the locally configured GLM-5.3 provider, rather than a Kimi model. The tools and their accounts are separate from RustDesk.
+
+| Codex: generated diff and passing tests | Kimi Code: generated code and passing tests |
+| --- | --- |
+| [<img src="docs/assets/mobile-terminal/codex-result.png" width="300" alt="Actual Codex-generated Python test diff and three passing tests">](docs/assets/mobile-terminal/codex-result.png) | [<img src="docs/assets/mobile-terminal/kimi-code-result.png" width="300" alt="Actual Kimi Code Python output and three passing tests">](docs/assets/mobile-terminal/kimi-code-result.png) |
+
+[Prompt and capture details](docs/mobile-terminal-demo.md#actual-codex-and-kimi-code-sessions--真实编程会话)
 
 ### What changes compared with upstream?
 
@@ -229,4 +239,3 @@ Please ensure that you run these commands from the root of the RustDesk reposito
 ![File Transfer](https://github.com/rustdesk/rustdesk/assets/28412477/39511ad3-aa9a-4f8c-8947-1cce286a46ad)
 
 ![TCP Tunneling](https://github.com/rustdesk/rustdesk/assets/28412477/78e8708f-e87e-4570-8373-1360033ea6c5)
-
