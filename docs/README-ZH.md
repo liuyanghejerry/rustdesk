@@ -68,7 +68,7 @@ Linux 原生模块测试覆盖多 shell 的输出、输入确认和图片响应�
 
 ### macOS 被控端分支
 
-`feature/macos-terminal-host` 专门增加实验性的 macOS 被控端支持，Android 主控界面沿用现有实现。被控端通过原生 PTY 运行登录用户的 shell，使用 `proc_pidinfo` 解析相对图片路径，并每五秒报告 RAM 和根文件系统使用量。认证、终端权限和 shell 保留规则保持一致，不需要更换 `hbbs`/`hbbr`。
+`feature/macos-terminal-host` 专门增加实验性的 macOS 被控端支持，两种终端入口复用增强的主控界面。被控端通过原生 PTY 运行登录用户的 shell，使用 `proc_pidinfo` 解析相对图片路径，并每五秒报告 RAM 和根文件系统使用量。认证、终端权限和 shell 保留规则保持一致，不需要更换 `hbbs`/`hbbr`。
 
 [原生被控端检查](../.github/workflows/macos-terminal-host.yml) 覆盖 Apple Silicon 和 Intel，包括 PTY 输入及尺寸调整、工作目录解析、资源采样和关闭功能后的编译。上面的演示仍来自 Android → Linux；完整 macOS 应用/DMG 构建、签名及公证、Android → macOS 端到端实测仍待完成，暂不能视为已验证的 macOS 发行版。
 

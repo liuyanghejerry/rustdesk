@@ -69,7 +69,7 @@ Linux native module tests cover independent shell output/input acknowledgement r
 
 ### macOS controlled host branch
 
-`feature/macos-terminal-host` adds experimental macOS host support to this fork. The Android controller is unchanged. The host uses a native PTY for the logged-in user's shell, resolves relative image paths through `proc_pidinfo` instead of Linux `/proc`, and reports RAM and root filesystem usage every five seconds. Existing authentication, terminal permission and shell retention rules apply; `hbbs`/`hbbr` do not need changes.
+`feature/macos-terminal-host` adds experimental macOS host support to this fork. Both terminal entry points reuse the enhanced controller UI. The host uses a native PTY for the logged-in user's shell, resolves relative image paths through `proc_pidinfo` instead of Linux `/proc`, and reports RAM and root filesystem usage every five seconds. Existing authentication, terminal permission and shell retention rules apply; `hbbs`/`hbbr` do not need changes.
 
 The [native host workflow](.github/workflows/macos-terminal-host.yml) checks these modules on Apple Silicon and Intel, including PTY input/resize, working-directory resolution, resource sampling and feature-disabled compilation. The recordings above remain Android → Linux demonstrations. A complete macOS app/DMG build, signing/notarization and Android → macOS end-to-end testing are still required before calling this a tested macOS release.
 
