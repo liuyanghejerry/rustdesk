@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:uuid/uuid.dart';
+import 'package:uuid/uuid_util.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_exit_dialog.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
@@ -75,7 +76,7 @@ class TerminalModel with ChangeNotifier {
   String get _ownerToken {
     var token = bind.mainGetPeerOptionSync(id: id, key: 'terminal-shell-owner');
     if (token.isEmpty) {
-      token = const Uuid().v4();
+      token = const Uuid().v4(options: {'rng': UuidUtil.cryptoRNG});
       bind.mainSetPeerOptionSync(
           id: id, key: 'terminal-shell-owner', value: token);
     }
@@ -391,7 +392,7 @@ class TerminalModel with ChangeNotifier {
         resumeToken = _resumeToken;
         createIfMissing = resumeToken.isEmpty;
         if (createIfMissing) {
-          resumeToken = const Uuid().v4();
+          resumeToken = const Uuid().v4(options: {'rng': UuidUtil.cryptoRNG});
           bind.mainSetPeerOptionSync(
               id: id, key: resumeOption, value: resumeToken);
         }
