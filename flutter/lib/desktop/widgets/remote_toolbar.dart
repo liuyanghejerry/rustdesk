@@ -8,6 +8,7 @@ import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/common/widgets/toolbar.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
+import 'package:flutter_hbb/mobile/pages/session_terminal_page.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
@@ -844,6 +845,9 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     // Do not show keyboard for camera connection type.
     if (widget.ffi.connType == ConnType.defaultConn) {
       toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
+      if (!isWeb) {
+        toolbarItems.add(_TerminalMenu(ffi: widget.ffi));
+      }
     }
     toolbarItems.add(_ChatMenu(id: widget.id, ffi: widget.ffi));
     if (!isWeb) {
@@ -2939,6 +2943,37 @@ class _VoiceCallMenu extends StatelessWidget {
       onPressed: () => bind.sessionCloseVoiceCall(sessionId: ffi.sessionId),
       color: _ToolbarTheme.redColor,
       hoverColor: _ToolbarTheme.hoverRedColor,
+    );
+  }
+}
+
+class _TerminalMenu extends StatelessWidget {
+  final FFI ffi;
+  const _TerminalMenu({required this.ffi});
+
+  @override
+  Widget build(BuildContext context) {
+    final model = Provider.of<FfiModel>(context);
+    if (!model.pi.features.terminalChannel) {
+      return const Offstage();
+    }
+    return _IconMenuButton(
+      icon: Icon(Icons.terminal,
+          color: Colors.white, size: _ToolbarTheme.buttonSize),
+      tooltip: 'Terminal',
+      onPressed: model.permissions['terminal'] == true
+          ? () {
+              if (!model.pi.features.terminalChannelResume) {
+                showToast(translate(
+                    'Update the controlled device to use resumable terminals.'));
+                return;
+              }
+              Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => SessionTerminalPage(ffi: ffi)));
+            }
+          : null,
+      color: _ToolbarTheme.blueColor,
+      hoverColor: _ToolbarTheme.hoverBlueColor,
     );
   }
 }
