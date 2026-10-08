@@ -110,10 +110,11 @@ class _TerminalNetworkStatusState extends State<TerminalNetworkStatus> {
                     '${translate('Receive rate')}: ${stale ? '-' : data.speed ?? '-'}',
                     style:
                         const TextStyle(fontSize: 12, color: Colors.white70)),
-                Text(
-                    '${translate('Desktop video paused')} · ${translate('Desktop FPS')}: ${stale ? '-' : data.fps ?? '-'}',
-                    style:
-                        const TextStyle(fontSize: 12, color: Colors.white70)),
+                if (widget.ffi.connType == ConnType.defaultConn)
+                  Text(
+                      '${translate('Desktop video paused')} · ${translate('Desktop FPS')}: ${stale ? '-' : data.fps ?? '-'}',
+                      style:
+                          const TextStyle(fontSize: 12, color: Colors.white70)),
               ],
             ),
           );

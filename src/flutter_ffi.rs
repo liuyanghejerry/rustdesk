@@ -705,28 +705,28 @@ pub fn session_send_chat(session_id: SessionID, text: String) {
     }
 }
 
-pub fn session_terminal_start(session_id: SessionID, rows: u32, cols: u32, resume_token: String, create_if_missing: bool) {
-    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_start(rows, cols, resume_token, create_if_missing); }
+pub fn session_terminal_start(session_id: SessionID, terminal_id: i32, rows: u32, cols: u32, resume_token: String, create_if_missing: bool) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_start(terminal_id, rows, cols, resume_token, create_if_missing); }
 }
 
-pub fn session_terminal_write(session_id: SessionID, data: Vec<u8>, input_sequence: u32) {
+pub fn session_terminal_write(session_id: SessionID, terminal_id: i32, data: Vec<u8>, input_sequence: u32) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
-        session.terminal_write(data, input_sequence);
+        session.terminal_write(terminal_id, data, input_sequence);
     }
 }
 
-pub fn session_terminal_image(session_id: SessionID, request_id: u32, path: String) {
+pub fn session_terminal_image(session_id: SessionID, terminal_id: i32, request_id: u32, path: String) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
-        session.terminal_image(request_id, path);
+        session.terminal_image(terminal_id, request_id, path);
     }
 }
 
-pub fn session_terminal_resize(session_id: SessionID, rows: u32, cols: u32) {
-    session_resize_terminal(session_id, 0, rows, cols);
+pub fn session_terminal_resize(session_id: SessionID, terminal_id: i32, rows: u32, cols: u32) {
+    session_resize_terminal(session_id, terminal_id, rows, cols);
 }
 
-pub fn session_terminal_stop(session_id: SessionID, resume_token: String, keep_shell: bool) {
-    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_stop(resume_token, keep_shell); }
+pub fn session_terminal_stop(session_id: SessionID, terminal_id: i32, resume_token: String, keep_shell: bool) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_stop(terminal_id, resume_token, keep_shell); }
 }
 
 pub fn session_terminal_set_video_displays(

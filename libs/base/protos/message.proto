@@ -85,6 +85,7 @@ message LoginRequest {
   bytes hwid = 14;
   string avatar = 17;
   bool terminal_channel = 18;
+  bool terminal_channel_standalone = 19;
 }
 
 message Terminal {
@@ -104,6 +105,7 @@ message Features {
   bool port_forward_mux = 3;
   bool terminal_channel = 4;
   bool terminal_channel_resume = 5;
+  bool terminal_channel_standalone = 6;
 }
 
 message CodecAbility {
@@ -930,11 +932,13 @@ message CloseTerminal {
 }
 
 message TerminalImageRequest {
+  int32 terminal_id = 3;
   uint32 request_id = 1;
   string path = 2;
 }
 
 message TerminalImage {
+  int32 terminal_id = 5;
   uint32 request_id = 1;
   bytes data = 2;
   bool done = 3;
@@ -973,11 +977,13 @@ message TerminalError {
 }
 
 message TerminalInputAck {
+  int32 terminal_id = 3;
   uint32 sequence = 1;
   string error = 2;
 }
 
 message TerminalResourceUsage {
+  int32 terminal_id = 5;
   uint64 memory_total = 1;
   uint64 memory_used = 2;
   uint64 disk_total = 3;

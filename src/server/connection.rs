@@ -454,6 +454,7 @@ pub struct Connection {
     cm_read_job_ids: HashSet<i32>,
     shell_channel: Option<super::terminal_channel::TerminalChannel>,
     shell_channel_token: String,
+    standalone_shells: super::terminal_channel_group::ChannelGroup,
     terminal_service_id: String,
     terminal_persistent: bool,
     // Used to avoid too many repeated scope violation warnings.
@@ -654,6 +655,7 @@ impl Connection {
             cm_read_job_ids: HashSet::new(),
             shell_channel: None,
             shell_channel_token: String::new(),
+            standalone_shells: Default::default(),
             terminal_service_id: "".to_owned(),
             terminal_persistent: false,
             scope_violation_messages: HashSet::new(),
@@ -1034,13 +1036,28 @@ impl Connection {
                         }
                     }
                 },
-                usage = terminal_resources.receive(), if conn.authorized && conn.shell_channel.is_some() && conn.terminal_channel_enabled() => {
+                usage = terminal_resources.receive(), if conn.authorized && (conn.shell_channel.is_some() || !conn.standalone_shells.is_empty()) && conn.terminal_channel_enabled() => {
                     if !conn.terminal_channel_enabled() { continue; }
                     let mut response = base::message_proto::TerminalResponse::new();
-                    response.set_resources(usage);
-                    let mut msg = Message::new();
-                    msg.set_terminal_response(response);
-                    conn.send(msg).await;
+                    response.set_resources(usage.clone());
+                    if conn.shell_channel.is_some() {
+                        let mut msg = Message::new();
+                        msg.set_terminal_response(response);
+                        conn.send(msg).await;
+                    }
+                    for id in conn.standalone_shells.ids() {
+                        let mut response = TerminalResponse::new();
+                        let mut usage = usage.clone(); usage.terminal_id = id;
+                        response.set_resources(usage);
+                        let mut msg = Message::new(); msg.set_terminal_response(response);
+                        conn.send(msg).await;
+                    }
+                },
+                response = conn.standalone_shells.receive() => {
+                    if conn.terminal_channel_enabled() {
+                        let mut msg = Message::new(); msg.set_terminal_response(response);
+                        conn.send(msg).await;
+                    } else { conn.destroy_shell_channel(); }
                 },
                 response = super::terminal_channel::receive(&mut conn.shell_channel) => {
                     if conn.terminal_channel_enabled() {
@@ -2115,6 +2132,7 @@ impl Connection {
         pi.features = Some(Features {
             terminal_channel: super::terminal_channel::supported(),
             terminal_channel_resume: super::terminal_channel::supported(),
+            terminal_channel_standalone: super::terminal_channel::supported(),
             privacy_mode: privacy_mode::is_privacy_mode_supported(),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             terminal,
@@ -2231,7 +2249,7 @@ impl Connection {
         } else if self.terminal {
             self.keyboard = false;
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            self.init_terminal_service().await;
+            if !self.uses_standalone_channel() { self.init_terminal_service().await; }
         } else if self.view_camera {
             if !wait_session_id_confirm {
                 self.try_sub_camera_displays();
@@ -2243,7 +2261,7 @@ impl Connection {
                 self.try_sub_monitor_services();
             }
         }
-        if self.is_remote() {
+        if self.is_remote() || self.uses_standalone_channel() {
             if self.lr.terminal_channel {
                 self.send_permission(Permission::Terminal, self.terminal_channel_enabled()).await;
             }
@@ -4100,6 +4118,9 @@ impl Connection {
                     }
                 }
                 Some(message::Union::PortForwardChannel(ch)) => self.handle_port_forward_channel(ch),
+                Some(message::Union::TerminalAction(action)) if self.uses_standalone_channel() => {
+                    self.handle_standalone_channel_action(action).await;
+                }
                 Some(message::Union::TerminalAction(action)) if self.is_remote() => {
                     self.handle_shell_channel_action(action).await;
                 }
@@ -5287,6 +5308,8 @@ impl Connection {
             return;
         }
         self.closed = true;
+        let keep_shells = self.terminal_channel_enabled() && !reason.starts_with("connection manager") && reason != "web console";
+        self.standalone_shells.release(&self.lr.my_id, keep_shells);
         if let Some(channel) = self.shell_channel.take() {
             if self.terminal_channel_enabled() && !reason.starts_with("connection manager") && reason != "web console" {
                 if let Err(err) = super::terminal_channel_sessions::retain(self.lr.my_id.clone(), channel) {
@@ -6277,9 +6300,35 @@ impl Connection {
     }
 
     fn destroy_shell_channel(&mut self) {
+        self.standalone_shells.release(&self.lr.my_id, false);
         if let Some(channel) = self.shell_channel.take() {
             super::terminal_channel_sessions::destroyed(&channel.resume_token);
         }
+    }
+
+    fn uses_standalone_channel(&self) -> bool {
+        self.terminal && self.lr.terminal_channel_standalone && super::terminal_channel::supported()
+    }
+
+    async fn handle_standalone_channel_action(&mut self, action: TerminalAction) {
+        let id = super::terminal_channel_group::action_id(&action).unwrap_or(0);
+        let result = if self.terminal_channel_enabled() {
+            self.standalone_shells.action(&self.lr.my_id, action).await
+        } else {
+            self.destroy_shell_channel();
+            Err(hbb_common::anyhow::anyhow!("No permission of terminal"))
+        };
+        if !self.terminal_channel_enabled() { self.destroy_shell_channel(); }
+        let response = match result {
+            Ok(Some(response)) if self.terminal_channel_enabled() => response,
+            Ok(None) => return,
+            other => {
+                let mut response = TerminalResponse::new();
+                response.set_error(TerminalError { terminal_id: id, message: other.err().map(|e| e.to_string()).unwrap_or_else(|| "No permission of terminal".into()), ..Default::default() });
+                response
+            }
+        };
+        let mut msg = Message::new(); msg.set_terminal_response(response); self.send(msg).await;
     }
 
     fn terminal_channel_enabled(&self) -> bool {
@@ -6298,7 +6347,15 @@ impl Connection {
                 Some(Union::Open(open)) if open.terminal_id == 0 => {
                     if self.shell_channel.is_none() {
                         match super::terminal_channel_sessions::take(&self.lr.my_id, &open.resume_token) {
-                            Ok(channel) => self.shell_channel = channel,
+                            Ok(mut channel) => {
+                                if let Some(channel) = channel.as_mut() {
+                                    if let Err(err) = channel.prepare_reconnect_resize(open.rows, open.cols) {
+                                        super::terminal_channel_sessions::destroyed(&channel.resume_token);
+                                        self.send_shell_channel_error(err.to_string()).await; return;
+                                    }
+                                }
+                                self.shell_channel = channel;
+                            }
                             Err(err) => { self.send_shell_channel_error(err.to_string()).await; return; }
                         }
                     }

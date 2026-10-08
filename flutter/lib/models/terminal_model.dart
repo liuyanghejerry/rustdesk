@@ -51,7 +51,16 @@ class TerminalModel with ChangeNotifier {
   final String id; // peer id
   final FFI parent;
   final int terminalId;
-  final bool isChannel;
+  final bool _channelRequested;
+  bool get isChannel =>
+      _channelRequested ||
+      (!isWeb &&
+          parent.connType == ConnType.terminal &&
+          parent.ffiModel.pi.features.terminalChannelStandalone);
+  String get resumeOption =>
+      terminalId == 0 && parent.connType != ConnType.terminal
+          ? terminalResumeOption
+          : '$terminalResumeOption-standalone-$terminalId';
   TerminalResourceUsage? resourceUsage;
   Future<void> _channelInputQueue = Future.value();
   Completer<void>? _inputAck;
@@ -60,7 +69,7 @@ class TerminalModel with ChangeNotifier {
   Completer<void>? _closeAck;
   Timer? _resumeRetry;
   String get _resumeToken =>
-      bind.mainGetPeerOptionSync(id: id, key: terminalResumeOption);
+      bind.mainGetPeerOptionSync(id: id, key: resumeOption);
 
   void Function(Map<String, dynamic>)? onImageResponse;
   late final Terminal terminal;
@@ -70,6 +79,8 @@ class TerminalModel with ChangeNotifier {
   bool get terminalOpened => _terminalOpened;
 
   bool _disposed = false;
+  String title = '';
+  bool _restoredChannelTabs = false;
 
   /// Callback to check whether Ctrl modifier lock is currently active.
   /// When active, keyboard input is mapped to control codes (e.g. 'b' → \x02).
@@ -204,6 +215,7 @@ class TerminalModel with ChangeNotifier {
           await Future.wait<void>([
             ack.future.timeout(const Duration(seconds: 30)),
             bind.sessionTerminalWrite(
+              terminalId: terminalId,
               sessionId: parent.sessionId,
               data: Uint8List.fromList(
                   data.sublist(start, (start + 4096).clamp(0, data.length))),
@@ -237,8 +249,9 @@ class TerminalModel with ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  TerminalModel(this.parent, [this.terminalId = 0, this.isChannel = false])
-      : id = parent.id {
+  TerminalModel(this.parent, [this.terminalId = 0, bool isChannel = false])
+      : id = parent.id,
+        _channelRequested = isChannel {
     terminal = RustDeskTerminal(
       maxLines: 10000,
       onClipboardWrite: writeTerminalClipboard,
@@ -252,6 +265,12 @@ class TerminalModel with ChangeNotifier {
       onClipboardWriteSucceeded: (text) =>
           onClipboardWriteSucceeded?.call(text),
     );
+    terminal.onTitleChange = (value) {
+      if (_disposed || !this.isChannel) return;
+      title = value.replaceAll(RegExp(r'[\x00-\x1f\x7f]'), '').trim();
+      if (title.length > 120) title = title.substring(0, 120);
+      notifyListeners();
+    };
     terminal.mouseHandler = const WheelButtonFixMouseHandler();
     terminalController = TerminalController();
 
@@ -281,7 +300,10 @@ class TerminalModel with ChangeNotifier {
           try {
             if (isChannel) {
               await bind.sessionTerminalResize(
-                  sessionId: parent.sessionId, rows: h, cols: w);
+                  terminalId: terminalId,
+                  sessionId: parent.sessionId,
+                  rows: h,
+                  cols: w);
             } else {
               await bind.sessionResizeTerminal(
                 sessionId: parent.sessionId,
@@ -304,8 +326,9 @@ class TerminalModel with ChangeNotifier {
   void onReady() {
     if (isChannel) {
       _channelDisconnected();
-      bind.sessionTerminalSetVideoDisplays(
-          sessionId: parent.sessionId, displays: Int32List(0));
+      if (parent.connType == ConnType.defaultConn)
+        bind.sessionTerminalSetVideoDisplays(
+            sessionId: parent.sessionId, displays: Int32List(0));
     }
     parent.dialogManager.dismissAll();
 
@@ -344,11 +367,12 @@ class TerminalModel with ChangeNotifier {
         if (createIfMissing) {
           resumeToken = const Uuid().v4();
           bind.mainSetPeerOptionSync(
-              id: id, key: terminalResumeOption, value: resumeToken);
+              id: id, key: resumeOption, value: resumeToken);
         }
       }
       final opening = isChannel
           ? bind.sessionTerminalStart(
+              terminalId: terminalId,
               sessionId: parent.sessionId,
               rows: rows,
               cols: cols,
@@ -399,6 +423,7 @@ class TerminalModel with ChangeNotifier {
       _channelDisconnected();
       if (keepShell && !connected && _resumeToken.isNotEmpty) {
         await bind.sessionTerminalStop(
+            terminalId: terminalId,
             sessionId: parent.sessionId,
             resumeToken: _resumeToken,
             keepShell: true);
@@ -410,13 +435,14 @@ class TerminalModel with ChangeNotifier {
         await Future.wait<void>([
           ack.future.timeout(const Duration(seconds: 10)),
           bind.sessionTerminalStop(
+              terminalId: terminalId,
               sessionId: parent.sessionId,
               resumeToken: _resumeToken,
               keepShell: keepShell),
         ]);
         if (!keepShell) {
-          bind.mainSetPeerOptionSync(
-              id: id, key: terminalResumeOption, value: '');
+          bind.mainSetPeerOptionSync(id: id, key: resumeOption, value: '');
+          if (terminalId > 0) _rememberChannelTab(false);
         }
       } finally {
         if (identical(_closeAck, ack)) _closeAck = null;
@@ -577,10 +603,10 @@ class TerminalModel with ChangeNotifier {
 
     if (success) {
       if (isChannel && serviceId != null && serviceId.isNotEmpty) {
-        bind.mainSetPeerOptionSync(
-            id: id, key: terminalResumeOption, value: serviceId);
+        bind.mainSetPeerOptionSync(id: id, key: resumeOption, value: serviceId);
       }
       _terminalOpened = true;
+      if (isChannel && terminalId > 0) _rememberChannelTab(true);
       if (isChannel && message.isNotEmpty) {
         _writeToTerminal('\r\n${translate(message)}\r\n');
       }
@@ -609,12 +635,16 @@ class TerminalModel with ChangeNotifier {
         if (!_disposed) notifyListeners();
       });
 
-      final persistentSessions =
-          (evt['persistent_sessions'] as List<dynamic>? ?? [])
-              .whereType<int>()
-              .where((id) => !parent.terminalModels.containsKey(id))
-              .toList();
-      if (kWindowId != null && persistentSessions.isNotEmpty) {
+      final persistentSessions = (isChannel
+              ? _rememberedChannelTabs()
+              : (evt['persistent_sessions'] as List<dynamic>? ?? []))
+          .whereType<int>()
+          .where((id) => !parent.terminalModels.containsKey(id))
+          .toList();
+      if (kWindowId != null &&
+          persistentSessions.isNotEmpty &&
+          (!isChannel || !_restoredChannelTabs)) {
+        _restoredChannelTabs = true;
         DesktopMultiWindow.invokeMethod(
             kWindowId!,
             kWindowEventRestoreTerminalSessions,
@@ -626,6 +656,32 @@ class TerminalModel with ChangeNotifier {
     } else {
       _writeToTerminal('Failed to open terminal: $message\r\n');
     }
+  }
+
+  List<int> _rememberedChannelTabs() {
+    try {
+      return (jsonDecode(bind.mainGetPeerOptionSync(
+              id: id, key: 'terminal-channel-tabs')) as List)
+          .whereType<int>()
+          .where((id) => id > 0 && id <= 1000)
+          .toSet()
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _rememberChannelTab(bool keep) {
+    final ids = _rememberedChannelTabs().toSet();
+    if (keep) {
+      ids.add(terminalId);
+    } else {
+      ids.remove(terminalId);
+    }
+    bind.mainSetPeerOptionSync(
+        id: id,
+        key: 'terminal-channel-tabs',
+        value: jsonEncode(ids.toList()..sort()));
   }
 
   Future<void> _processBufferedInputAsync() async {
@@ -777,7 +833,8 @@ class TerminalModel with ChangeNotifier {
   void _handleTerminalClosed(Map<String, dynamic> evt) {
     if (_closeAck?.isCompleted == false) _closeAck!.complete();
     if (isChannel && evt['keep_shell'] != true && evt['keep_shell'] != 'true') {
-      bind.mainSetPeerOptionSync(id: id, key: terminalResumeOption, value: '');
+      bind.mainSetPeerOptionSync(id: id, key: resumeOption, value: '');
+      if (terminalId > 0) _rememberChannelTab(false);
     }
     final int exitCode = getExitCodeFromEvt(evt);
     _writeToTerminal('\r\nTerminal closed with exit code: $exitCode\r\n');
@@ -793,7 +850,8 @@ class TerminalModel with ChangeNotifier {
       _closeAck!.completeError(StateError(message));
     }
     if (isChannel && message == 'The retained shell is no longer available.') {
-      bind.mainSetPeerOptionSync(id: id, key: terminalResumeOption, value: '');
+      bind.mainSetPeerOptionSync(id: id, key: resumeOption, value: '');
+      if (terminalId > 0) _rememberChannelTab(false);
     }
     if (isChannel && message == 'Terminal transport disconnected') {
       _channelDisconnected();
@@ -820,6 +878,7 @@ class TerminalModel with ChangeNotifier {
     _disposed = true;
     if (isChannel) _channelDisconnected();
     terminal.onOutput = null;
+    terminal.onTitleChange = null;
     terminal.onResize = null;
     isCtrlLocked = null;
     clearCtrlLock = null;

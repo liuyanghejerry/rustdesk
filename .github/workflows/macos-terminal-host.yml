@@ -8,6 +8,7 @@ on:
       - src/server/terminal_channel.rs
       - src/server/terminal_resources.rs
       - src/server/terminal_channel_sessions.rs
+      - src/server/terminal_channel_group.rs
       - libs/base/protos/message.proto
       - .github/workflows/macos-terminal-host.yml
 
@@ -64,6 +65,8 @@ jobs:
           pub mod terminal_channel;
           #[path = "$GITHUB_WORKSPACE/src/server/terminal_channel_sessions.rs"]
           pub mod terminal_channel_sessions;
+          #[path = "$GITHUB_WORKSPACE/src/server/terminal_channel_group.rs"]
+          pub mod terminal_channel_group;
           #[path = "$GITHUB_WORKSPACE/src/server/terminal_resources.rs"]
           pub mod terminal_resources;
           EOF

@@ -884,6 +884,7 @@ impl InvokeUiSession for FlutterHandler {
             features.insert("privacy_mode", f.privacy_mode);
             features.insert("terminal_channel", f.terminal_channel);
             features.insert("terminal_channel_resume", f.terminal_channel_resume);
+            features.insert("terminal_channel_standalone", cfg!(feature = "terminal-channel") && f.terminal_channel_standalone);
         }
         // compatible with 1.1.9
         if get_version_number(&pi.version) < get_version_number("1.2.0") {
@@ -1153,20 +1154,20 @@ impl InvokeUiSession for FlutterHandler {
             }
             Some(Union::Resources(usage)) => {
                 self.push_event_("terminal_response", &[
-                    ("type", json!("resources")), ("terminal_id", json!(0)),
+                    ("type", json!("resources")), ("terminal_id", json!(usage.terminal_id)),
                     ("memory_total", json!(usage.memory_total)), ("memory_used", json!(usage.memory_used)),
                     ("disk_total", json!(usage.disk_total)), ("disk_used", json!(usage.disk_used)),
                 ], &[], &[]);
             }
             Some(Union::InputAck(ack)) => {
                 self.push_event_("terminal_response", &[
-                    ("type", json!("input_ack")), ("terminal_id", json!(0)),
+                    ("type", json!("input_ack")), ("terminal_id", json!(ack.terminal_id)),
                     ("sequence", json!(ack.sequence)), ("error", json!(ack.error)),
                 ], &[], &[]);
             }
             Some(Union::Image(image)) => {
                 let event_data = vec![
-                    ("type", json!("image")), ("terminal_id", json!(0)),
+                    ("type", json!("image")), ("terminal_id", json!(image.terminal_id)),
                     ("request_id", json!(image.request_id)), ("data", json!(crate::encode64(&image.data))),
                     ("done", json!(image.done)), ("error", json!(image.error)),
                 ];

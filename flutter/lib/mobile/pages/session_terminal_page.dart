@@ -8,6 +8,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/terminal_model.dart';
+import 'package:flutter_hbb/models/terminal_mouse_handler.dart';
 import 'package:flutter_hbb/models/terminal_image_path.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_image_preview.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_network_status.dart';
@@ -15,10 +16,18 @@ import 'package:flutter_hbb/mobile/pages/terminal_shortcuts.dart';
 import 'package:xterm/xterm.dart';
 import 'terminal_exit_dialog.dart';
 
-/// Uses the remote page's authenticated session, without opening another connection.
+/// Shared channel terminal view for desktop sessions and terminal-only connections.
 class SessionTerminalPage extends StatefulWidget {
-  const SessionTerminalPage({super.key, required this.ffi});
+  const SessionTerminalPage(
+      {super.key,
+      required this.ffi,
+      this.model,
+      this.onClosed,
+      this.focusNode});
   final FFI ffi;
+  final TerminalModel? model;
+  final VoidCallback? onClosed;
+  final FocusNode? focusNode;
 
   @override
   State<SessionTerminalPage> createState() => _SessionTerminalPageState();
@@ -27,7 +36,7 @@ class SessionTerminalPage extends StatefulWidget {
 class _SessionTerminalPageState extends State<SessionTerminalPage> {
   late final TerminalModel _model;
   final _viewKey = GlobalKey<TerminalViewState>();
-  final _focusNode = FocusNode();
+  late final _focusNode = widget.focusNode ?? FocusNode();
   bool _closing = false;
   bool _choosingExit = false;
   bool _exitApplied = false;
@@ -39,17 +48,18 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
   @override
   void initState() {
     super.initState();
-    bind.sessionTerminalSetVideoDisplays(
-        sessionId: widget.ffi.sessionId, displays: Int32List(0));
-    _model = TerminalModel(widget.ffi, 0, true);
-    widget.ffi.registerTerminalModel(0, _model);
+    if (widget.ffi.connType == ConnType.defaultConn)
+      bind.sessionTerminalSetVideoDisplays(
+          sessionId: widget.ffi.sessionId, displays: Int32List(0));
+    _model = widget.model ?? TerminalModel(widget.ffi, 0, true);
+    if (widget.model == null) widget.ffi.registerTerminalModel(0, _model);
     _model.onClosed = _close;
     _model.onImageResponse = _imageResponse;
     widget.ffi.ffiModel.addListener(_permissionChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        unawaited(_model.openTerminal());
-        unawaited(_openKeyboard());
+        if (widget.model == null) unawaited(_model.openTerminal());
+        if (isMobile) unawaited(_openKeyboard());
       }
     });
   }
@@ -61,6 +71,10 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
   void _close() {
     if (mounted && !_closing) {
       _closing = true;
+      if (widget.onClosed != null) {
+        widget.onClosed!();
+        return;
+      }
       final route = ModalRoute.of(context);
       Navigator.of(context).popUntil((r) => r == route);
       Navigator.of(context).pop();
@@ -69,7 +83,10 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
 
   Future<bool> _requestExit() async {
     if (_choosingExit || _closing) return false;
-    if (!_model.terminalOpened && !hasRetainedTerminal(widget.ffi)) {
+    if (!_model.terminalOpened &&
+        bind
+            .mainGetPeerOptionSync(id: widget.ffi.id, key: _model.resumeOption)
+            .isEmpty) {
       _close();
       return false;
     }
@@ -103,6 +120,17 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
   Future<void> _paste() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (mounted && data?.text != null) await _model.pasteText(data!.text!);
+  }
+
+  Future<void> _copyOrPaste() async {
+    final selection = _model.terminalController.selection;
+    if (selection == null) {
+      await _paste();
+      return;
+    }
+    final text = _model.terminal.buffer.getText(selection);
+    _model.terminalController.clearSelection();
+    await Clipboard.setData(ClipboardData(text: text));
   }
 
   void _imagePointerUp(PointerUpEvent event) {
@@ -155,6 +183,7 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
     try {
       unawaited(bind
           .sessionTerminalImage(
+              terminalId: _model.terminalId,
               sessionId: widget.ffi.sessionId,
               requestId: _imageId =
                   DateTime.now().microsecondsSinceEpoch & 0xffffffff,
@@ -212,31 +241,33 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
   @override
   void dispose() {
     final pi = widget.ffi.ffiModel.pi;
-    bind.sessionTerminalSetVideoDisplays(
-      sessionId: widget.ffi.sessionId,
-      displays: Int32List.fromList(pi.currentDisplay < 0
-          ? List<int>.generate(pi.displays.length, (i) => i)
-          : [pi.currentDisplay]),
-    );
+    if (widget.ffi.connType == ConnType.defaultConn)
+      bind.sessionTerminalSetVideoDisplays(
+        sessionId: widget.ffi.sessionId,
+        displays: Int32List.fromList(pi.currentDisplay < 0
+            ? List<int>.generate(pi.displays.length, (i) => i)
+            : [pi.currentDisplay]),
+      );
     if (_imageResult?.isCompleted == false) {
       _imageResult!.completeError(Exception('Terminal closed'));
     }
     widget.ffi.ffiModel.removeListener(_permissionChanged);
-    widget.ffi.unregisterTerminalModel(0);
-    if (!_exitApplied) {
+    if (widget.model == null) widget.ffi.unregisterTerminalModel(0);
+    if (!_exitApplied && widget.model == null) {
       unawaited(bind
           .sessionTerminalStop(
+        terminalId: _model.terminalId,
         sessionId: widget.ffi.sessionId,
         resumeToken: bind.mainGetPeerOptionSync(
-            id: widget.ffi.id, key: terminalResumeOption),
+            id: widget.ffi.id, key: _model.resumeOption),
         keepShell: true,
       )
           .catchError((Object error) {
         debugPrint('Terminal detach failed: $error');
       }));
     }
-    _model.dispose();
-    _focusNode.dispose();
+    if (widget.model == null) _model.dispose();
+    if (widget.focusNode == null) _focusNode.dispose();
     super.dispose();
   }
 
@@ -249,8 +280,22 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
         child: Scaffold(
           appBar: AppBar(
             leading: BackButton(onPressed: _requestExit),
-            title: Text(translate('Terminal')),
+            title: AnimatedBuilder(
+                animation: _model,
+                builder: (_, __) => Text(
+                    _model.title.isEmpty ? translate('Terminal') : _model.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis)),
             actions: [
+              AnimatedBuilder(
+                  animation: _model,
+                  builder: (_, __) => _model.terminalOpened
+                      ? const SizedBox.shrink()
+                      : IconButton(
+                          icon: const Icon(Icons.refresh),
+                          tooltip: translate('Reconnect'),
+                          onPressed: () => _model.openTerminal(),
+                        )),
               IconButton(
                   icon: const Icon(Icons.image_outlined),
                   tooltip: translate('Preview image'),
@@ -260,11 +305,12 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
                 tooltip: translate('Paste'),
                 onPressed: _paste,
               ),
-              IconButton(
-                icon: const Icon(Icons.keyboard),
-                tooltip: translate('wayland-soft-keyboard-input-label'),
-                onPressed: _openKeyboard,
-              ),
+              if (isMobile)
+                IconButton(
+                  icon: const Icon(Icons.keyboard),
+                  tooltip: translate('wayland-soft-keyboard-input-label'),
+                  onPressed: _openKeyboard,
+                ),
             ],
           ),
           backgroundColor: Colors.black,
@@ -275,17 +321,27 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
                 child: Listener(
                   onPointerDown: (event) => _imageTap = event,
                   onPointerUp: _imagePointerUp,
-                  child: TerminalView(
-                    _model.terminal,
-                    key: _viewKey,
-                    focusNode: _focusNode,
-                    controller: _model.terminalController,
-                    autofocus: true,
-                    keyboardType: TextInputType.multiline,
-                    deleteDetection: true,
-                    textStyle: const TerminalStyle(fontSize: 14),
-                    padding: const EdgeInsets.all(8),
-                  ),
+                  child: isDesktop
+                      ? TerminalMouseInteraction(
+                          _model.terminal,
+                          terminalViewKey: _viewKey,
+                          controller: _model.terminalController,
+                          focusNode: _focusNode,
+                          autofocus: true,
+                          padding: const EdgeInsets.all(8),
+                          onSecondaryTapDown: (_, __) => _copyOrPaste(),
+                        )
+                      : TerminalView(
+                          _model.terminal,
+                          key: _viewKey,
+                          focusNode: _focusNode,
+                          controller: _model.terminalController,
+                          autofocus: true,
+                          keyboardType: TextInputType.multiline,
+                          deleteDetection: true,
+                          textStyle: const TerminalStyle(fontSize: 14),
+                          padding: const EdgeInsets.all(8),
+                        ),
                 ),
               ),
               TerminalShortcuts(

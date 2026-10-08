@@ -10,10 +10,21 @@ class _FakeFFI implements FFI {
   String id = 'test-peer';
 
   @override
+  ConnType connType = ConnType.defaultConn;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
+  test('channel terminal displays the shell title and drops control characters',
+      () {
+    final model = TerminalModel(_FakeFFI(), 1, true);
+    addTearDown(model.dispose);
+    model.terminal.write('\x1b]0;Build\x01 report\x07');
+    expect(model.title, 'Build report');
+  });
+
   test('ignores paste that completes after the terminal model is disposed',
       () async {
     final model = TerminalModel(_FakeFFI());

@@ -334,6 +334,14 @@ class _ConnectionPageState extends State<ConnectionPage> {
                         },
                         icon: Icon(Icons.clear, color: MyTheme.darkGray)),
                   )),
+              Obx(() => IconButton(
+                    tooltip: translate('Terminal'),
+                    icon: const Icon(Icons.terminal, color: MyTheme.darkGray),
+                    onPressed: _idEmpty.value
+                        ? null
+                        : () => connect(context, _idController.id,
+                            isTerminal: true),
+                  )),
               SizedBox(
                 width: 60,
                 height: 60,

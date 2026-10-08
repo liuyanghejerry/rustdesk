@@ -34,6 +34,7 @@ use crate::ipc::Data;
 
 pub mod audio_service;
 pub mod terminal_channel;
+pub mod terminal_channel_group;
 pub mod terminal_channel_sessions;
 pub mod terminal_resources;
 #[cfg(target_os = "windows")]

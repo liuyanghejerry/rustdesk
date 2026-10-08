@@ -17,6 +17,7 @@ import 'package:get/get.dart';
 
 import '../../models/platform_model.dart';
 import 'terminal_page.dart';
+import '../../mobile/pages/terminal_exit_dialog.dart';
 import 'terminal_connection_manager.dart';
 import '../widgets/material_mod_popup_menu.dart' as mod_menu;
 import '../widgets/popup_menu.dart';
@@ -289,6 +290,18 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
     _closingTabs.add(tabKey);
 
     try {
+      final channelTab = _parseTabKey(tabKey);
+      final channelModel = channelTab == null
+          ? null
+          : TerminalConnectionManager.getExistingConnection(channelTab.$1)
+              ?.terminalModels[channelTab.$2];
+      if (channelModel?.isChannel == true) {
+        final keep = await chooseTerminalExit(context);
+        if (keep == null || !mounted) return;
+        await channelModel!.closeTerminal(keepShell: keep);
+        tabController.closeBy(tabKey);
+        return;
+      }
       // Snapshot peerTabCount BEFORE any await to avoid race with concurrent
       // _closeAllTabs clearing tabController (which would make the live count
       // drop to 0 and incorrectly trigger session persistence).
@@ -387,6 +400,12 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
 
     final ffi = TerminalConnectionManager.getExistingConnection(peerId);
     if (ffi == null) return;
+
+    final channelModel = ffi.terminalModels[terminalId];
+    if (channelModel?.isChannel == true) {
+      await channelModel!.closeTerminal(keepShell: true);
+      return;
+    }
 
     final isPersistent = bind.sessionGetToggleOptionSync(
       sessionId: ffi.sessionId,
@@ -791,6 +810,28 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
   }
 
   Future<bool> handleWindowCloseButton() async {
+    final channels = <TerminalModel>[];
+    for (final tab in tabController.state.value.tabs) {
+      final parsed = _parseTabKey(tab.key);
+      if (parsed == null) continue;
+      final model = TerminalConnectionManager.getExistingConnection(parsed.$1)
+          ?.terminalModels[parsed.$2];
+      if (model?.isChannel == true) channels.add(model!);
+    }
+    if (channels.isNotEmpty) {
+      final keep = await chooseTerminalExit(context);
+      if (keep == null || !mounted) return false;
+      try {
+        await Future.wait(
+            channels.map((model) => model.closeTerminal(keepShell: keep)));
+      } catch (error) {
+        showToast('${translate('Failed')}: $error');
+        return false;
+      }
+      // Channel acknowledgements removed their tabs; clean up any legacy peers too.
+      await _closeAllTabs();
+      return true;
+    }
     final connLength = tabController.state.value.tabs.length;
     if (connLength == 1) {
       if (await desktopTryShowTabAuditDialogCloseCancelled(

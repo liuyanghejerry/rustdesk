@@ -3871,6 +3871,7 @@ impl LoginConfigHandler {
         };
         let mut lr = LoginRequest {
             terminal_channel: true,
+            terminal_channel_standalone: cfg!(feature = "terminal-channel") && self.conn_type == ConnType::TERMINAL,
             username: pure_id,
             password: password.into(),
             my_id,

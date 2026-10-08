@@ -11,6 +11,7 @@ import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/terminal_copy_shortcut.dart';
 import 'package:flutter_hbb/models/terminal_model.dart';
+import 'package:flutter_hbb/mobile/pages/session_terminal_page.dart';
 import 'package:flutter_hbb/models/terminal_mouse_handler.dart';
 import 'package:flutter_hbb/mobile/terminal_keyboard_utils.dart';
 import 'package:flutter_hbb/web/dummy.dart'
@@ -19,6 +20,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:xterm/xterm.dart';
 import '../../desktop/pages/terminal_connection_manager.dart';
 import '../../consts.dart';
+import 'terminal_keyboard_insets.dart';
 
 const _terminalBackgroundOpacity = 0.7;
 
@@ -149,6 +151,7 @@ class _TerminalPageState extends State<TerminalPage>
 
     // Create terminal model with specific terminal ID
     _terminalModel = TerminalModel(_ffi, widget.terminalId);
+    _terminalModel.addListener(_terminalChanged);
     if (_canHandleTerminalClipboardWriteRequest) {
       _terminalModel.onClipboardWriteBlocked =
           _handleTerminalClipboardWriteBlocked;
@@ -334,6 +337,7 @@ class _TerminalPageState extends State<TerminalPage>
   void dispose() {
     // Unregister terminal model from FFI
     _ffi.unregisterTerminalModel(widget.terminalId);
+    _terminalModel.removeListener(_terminalChanged);
     _terminalModel.dispose();
     _keyboardDebounce?.cancel();
     _terminalClipboardNotice.clear();
@@ -346,6 +350,7 @@ class _TerminalPageState extends State<TerminalPage>
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
+    if (_terminalModel.isChannel) return;
 
     _keyboardDebounce?.cancel();
     _keyboardDebounce = Timer(const Duration(milliseconds: 20), () {
@@ -408,9 +413,20 @@ class _TerminalPageState extends State<TerminalPage>
     return KeyEventResult.handled;
   }
 
+  void _terminalChanged() {
+    if (mounted && _terminalModel.isChannel) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    if (_terminalModel.isChannel)
+      return TerminalKeyboardInsets(
+          child: SessionTerminalPage(
+        ffi: _ffi,
+        model: _terminalModel,
+        onClosed: () => closeConnection(id: widget.id),
+      ));
     return WillPopScope(
       onWillPop: () async {
         clientClose(sessionId, _ffi);

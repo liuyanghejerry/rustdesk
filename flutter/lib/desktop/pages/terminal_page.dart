@@ -5,6 +5,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/terminal_model.dart';
+import 'package:flutter_hbb/mobile/pages/session_terminal_page.dart';
 import 'package:flutter_hbb/models/terminal_mouse_handler.dart';
 import 'terminal_connection_manager.dart';
 
@@ -75,6 +76,7 @@ class _TerminalPageState extends State<TerminalPage>
 
     // Create terminal model with specific terminal ID
     _terminalModel = TerminalModel(_ffi, widget.terminalId);
+    _terminalModel.addListener(_terminalChanged);
     _terminalModel.onClipboardWriteBlocked = widget.onClipboardWriteBlocked;
     _terminalModel.onClipboardWriteSucceeded = widget.onClipboardWriteSucceeded;
     debugPrint(
@@ -136,6 +138,7 @@ class _TerminalPageState extends State<TerminalPage>
     _tabStateSubscription?.cancel();
     // Unregister terminal model from FFI
     _ffi.unregisterTerminalModel(widget.terminalId);
+    _terminalModel.removeListener(_terminalChanged);
     _terminalModel.dispose();
     _terminalFocusNode.dispose();
     // Release connection reference instead of closing directly
@@ -195,9 +198,20 @@ class _TerminalPageState extends State<TerminalPage>
     );
   }
 
+  void _terminalChanged() {
+    if (mounted && _terminalModel.isChannel) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    if (_terminalModel.isChannel)
+      return SessionTerminalPage(
+        ffi: _ffi,
+        model: _terminalModel,
+        focusNode: _terminalFocusNode,
+        onClosed: () => widget.tabController.closeBy(widget.tabKey),
+      );
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: LayoutBuilder(

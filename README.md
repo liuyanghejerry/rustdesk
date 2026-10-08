@@ -35,11 +35,11 @@ Both tools generated `greet.py` and three Python unit tests, then ran the tests 
 
 ### What changes compared with upstream?
 
-The comparison below is against this branch's upstream base, [`c9c0b5d0`](https://github.com/rustdesk/rustdesk/commit/c9c0b5d0efd44b364b31639f3c118e8adc42d98c), rather than a claim about every official release. That base already has a separate terminal connection and terminal session support; this fork adds the following path alongside it.
+The comparison below is against this branch's upstream base, [`c9c0b5d0`](https://github.com/rustdesk/rustdesk/commit/c9c0b5d0efd44b364b31639f3c118e8adc42d98c), rather than a claim about every official release. That base already has a separate terminal connection and terminal session support; this fork now uses its enhanced terminal UI and channel for both in-desktop and standalone connections on compatible Linux/macOS hosts.
 
 | Area | Upstream base | This fork |
 | --- | --- | --- |
-| Terminal entry | Separate **Terminal (beta)** connection | **Terminal** inside an authenticated Android desktop connection; reuses its transport |
+| Terminal entry | Separate **Terminal (beta)** connection | **Terminal** inside an authenticated desktop connection, or a direct terminal-only connection |
 | Mobile interaction | Existing standalone terminal UI | Expandable **Control**, **Cursor**, and **Input and editing** groups; all four arrows, Home/End, Ctrl+C/D/Z, Tab and Enter |
 | Image output | Existing terminal rendering | Tap a printed image path, or enter a path, to fetch a preview from the host; double-tap/pinch to zoom |
 | Network feedback | Existing connection quality tools | Terminal status bar with RTT, total receive rate, desktop FPS and stale-latency feedback |
@@ -48,16 +48,24 @@ The comparison below is against this branch's upstream base, [`c9c0b5d0`](https:
 | Shell lifecycle | Existing standalone session behavior | Keep the same in-session shell after network loss; explicit exit offers **Cancel / Keep and exit / Destroy and exit** |
 | Input delivery | Existing terminal input path | Acknowledged, ordered chunks for this channel; abort remaining input after a delivery failure; mobile IME activation on entry |
 
-The original standalone terminal path remains available. CLI coding agents are installed and run on the remote machine; this fork does not bundle an AI model, agent or API credentials.
+On compatible hosts, standalone connections use the same enhanced terminal as desktop sessions. Older hosts, unsupported platforms, web controllers and builds without `terminal-channel` keep the upstream standalone implementation. CLI coding agents are installed and run on the remote machine; this fork does not bundle an AI model, agent or API credentials.
 
 ### Try it
 
 1. Update both the Android controller and the Linux controlled device to compatible fork builds. Upstream downloads linked further below do **not** contain these fork features.
 2. Run the controlled device's server as the logged-in user and enable its terminal permission. The in-session shell refuses to run as root.
-3. Connect to the desktop, open **⋮ → Terminal**, then type, paste or use the grouped shortcut buttons.
+3. Connect to the desktop and open **⋮ → Terminal**, or connect directly with **Terminal (beta)** in the peer menu. On Android, the terminal icon beside the remote ID opens a terminal-only connection. Then type, paste or use the grouped shortcut buttons.
 4. Click an image path such as `./build-report.png` to preview it. Use Back to choose whether the shell should remain running.
 
 No `hbbs`/`hbbr` changes are required. Validation currently covers Android → Linux; other controller/host combinations are not claimed as tested.
+
+### Standalone terminal connections
+
+Standalone connections authenticate with terminal-only permissions and do not subscribe to desktop video. Both endpoints need compatible fork builds to select the enhanced channel. It uses the same logged-in user's login shell as the in-desktop terminal, rather than the legacy service shell environment.
+
+The upstream desktop tab manager, mouse selection and application mouse reporting, bracketed paste, 10,000-line scrollback, and permission-controlled OSC 52 clipboard writes are retained. Shell titles appear in the terminal header; reconnecting a retained shell triggers a PTY resize so full-screen applications can redraw. Desktop connections support multiple independent shells (up to 32 per connection), with separate input acknowledgements, image responses and resume tokens. Closing a tab or window asks whether to keep or destroy its shells; network loss retains them. Retention does not survive a host process restart.
+
+Linux native module tests cover independent shell output/input acknowledgement routing and image response routing. macOS module checks run on both architectures; complete standalone desktop/mobile UI connections still need end-to-end validation.
 
 ### macOS controlled host branch
 

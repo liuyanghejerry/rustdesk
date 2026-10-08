@@ -20,6 +20,7 @@ class TerminalMouseInteraction extends StatefulWidget {
     super.key,
     required this.controller,
     this.focusNode,
+    this.terminalViewKey,
     this.autofocus = false,
     this.textStyle = const TerminalStyle(),
     this.deleteDetection = false,
@@ -34,6 +35,7 @@ class TerminalMouseInteraction extends StatefulWidget {
   final Terminal terminal;
   final TerminalController controller;
   final FocusNode? focusNode;
+  final GlobalKey<TerminalViewState>? terminalViewKey;
   final bool autofocus;
   final TerminalStyle textStyle;
   final bool deleteDetection;
@@ -55,7 +57,8 @@ class _TerminalMouseInteractionState extends State<TerminalMouseInteraction> {
   static const _scrollUp = -1;
   static const _scrollDown = 1;
 
-  final _terminalViewKey = GlobalKey<TerminalViewState>();
+  late final _terminalViewKey =
+      widget.terminalViewKey ?? GlobalKey<TerminalViewState>();
   late final _scrollController = TerminalScrollController(() => widget.terminal);
   final _mouseDrag = TerminalMouseDragReporter();
   late final WheelButtonFixMouseHandler _mouseHandler;

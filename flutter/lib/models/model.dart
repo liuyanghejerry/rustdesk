@@ -1407,6 +1407,10 @@ class FfiModel with ChangeNotifier {
     if (connType == ConnType.fileTransfer) {
       parent.target?.fileModel.onReady();
     } else if (connType == ConnType.terminal) {
+      final features = json.decode(evt['features']) as Map<String, dynamic>;
+      _pi.features.terminalChannelStandalone = features['terminal_channel_standalone'] == true;
+      _pi.features.terminalChannel = features['terminal_channel'] == true;
+      _pi.features.terminalChannelResume = features['terminal_channel_resume'] == true;
       // Call onReady on all registered terminal models
       final models = parent.target?._terminalModels.values ?? [];
       for (final model in models) {
@@ -1455,6 +1459,7 @@ class FfiModel with ChangeNotifier {
       _pi.features.privacyMode = features['privacy_mode'] == true;
       _pi.features.terminalChannel = features['terminal_channel'] == true;
       _pi.features.terminalChannelResume = features['terminal_channel_resume'] == true;
+      _pi.features.terminalChannelStandalone = features['terminal_channel_standalone'] == true;
       if (!isCache) {
         handleResolutions(peerId, evt["resolutions"]);
       }
@@ -4438,6 +4443,12 @@ class FFI {
 
   void routeTerminalResponse(Map<String, dynamic> evt) {
     final int terminalId = TerminalModel.getTerminalIdFromEvt(evt);
+    if (terminalId == -1 && evt['message'] == 'Terminal transport disconnected') {
+      for (final model in _terminalModels.values.toList()) {
+        if (model.isChannel) model.handleTerminalResponse({...evt, 'terminal_id': model.terminalId});
+      }
+      return;
+    }
 
     // Route to specific terminal model if it exists
     final model = _terminalModels[terminalId];
@@ -4508,6 +4519,7 @@ class Resolution {
 class Features {
   bool terminalChannel = false;
   bool terminalChannelResume = false;
+  bool terminalChannelStandalone = false;
   bool privacyMode = false;
 }
 

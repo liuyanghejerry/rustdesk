@@ -439,6 +439,12 @@ impl<T: InvokeUiSession> Remote<T> {
             .unwrap()
             .set_disconnected(round);
 
+        if self.handler.is_terminal() && _set_disconnected_ok {
+            let mut response = TerminalResponse::new();
+            response.set_error(TerminalError { terminal_id: -1, message: "Terminal transport disconnected".into(), ..Default::default() });
+            self.handler.handle_terminal_response(response);
+        }
+
         #[cfg(not(target_os = "ios"))]
         if self.handler.is_default() && _set_disconnected_ok {
             let mut response = TerminalResponse::new();
@@ -2350,7 +2356,7 @@ impl<T: InvokeUiSession> Remote<T> {
                 Some(message::Union::TerminalResponse(response)) => {
                     use base::message_proto::terminal_response::Union;
                     if let Some(Union::Opened(opened)) = &response.union {
-                        if self.handler.is_terminal() && opened.success && !opened.service_id.is_empty() {
+                        if self.handler.is_terminal() && opened.success && opened.service_id.starts_with("ts_") {
                             let mut lc = self.handler.lc.write().unwrap();
                             let key = lc.get_key_terminal_service_id().to_owned();
                             lc.set_option(key, opened.service_id.clone());

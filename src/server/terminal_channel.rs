@@ -42,6 +42,7 @@ pub struct TerminalChannel {
     output: mpsc::Receiver<Output>,
     image: std::sync::mpsc::SyncSender<TerminalImageRequest>,
     next_output: tokio::time::Instant,
+    reconnect_size: Option<(u16, u16, tokio::time::Instant)>,
     #[cfg(all(
         feature = "terminal-channel",
         unix,
@@ -192,6 +193,7 @@ impl TerminalChannel {
             output,
             image,
             next_output: tokio::time::Instant::now(),
+            reconnect_size: None,
             pty: pair.master,
             child: Some(child),
             input: Some(input),
@@ -205,6 +207,20 @@ impl TerminalChannel {
     )))]
     pub fn open(_rows: u32, _cols: u32) -> Result<Self> {
         bail!("Terminal channel is unsupported")
+    }
+
+    pub fn prepare_reconnect_resize(&mut self, rows: u32, cols: u32) -> Result<()> {
+        let (rows, cols) = size(rows, cols)?;
+        #[cfg(all(feature = "terminal-channel", unix, not(any(target_os = "android", target_os = "ios"))))]
+        {
+            self.pty.resize(portable_pty::PtySize {
+                rows: if rows < 1000 { rows + 1 } else { rows - 1 }, cols,
+                pixel_width: 0, pixel_height: 0,
+            })?;
+            // Let TUI applications observe the temporary size before restoring it.
+            self.reconnect_size = Some((rows, cols, tokio::time::Instant::now() + std::time::Duration::from_millis(100)));
+        }
+        Ok(())
     }
 
     pub fn action(&mut self, action: TerminalAction) -> Result<()> {
@@ -237,6 +253,7 @@ impl TerminalChannel {
             }
             Some(terminal_action::Union::Resize(resize)) if resize.terminal_id == 0 => {
                 let (rows, cols) = size(resize.rows, resize.cols)?;
+                self.reconnect_size = None;
                 self.pty.resize(portable_pty::PtySize {
                     rows,
                     cols,
@@ -294,6 +311,14 @@ pub async fn receive(channel: &mut Option<TerminalChannel>) -> TerminalResponse 
     let Some(session) = channel.as_mut() else {
         return std::future::pending().await;
     };
+    if let Some((rows, cols, deadline)) = session.reconnect_size {
+        tokio::time::sleep_until(deadline).await;
+        #[cfg(all(feature = "terminal-channel", unix, not(any(target_os = "android", target_os = "ios"))))]
+        if let Err(error) = session.pty.resize(portable_pty::PtySize { rows, cols, pixel_width: 0, pixel_height: 0 }) {
+            log::trace!("Terminal redraw resize failed: {error}");
+        }
+        session.reconnect_size = None;
+    }
     let mut response = TerminalResponse::new();
     // Keep the deadline across select! cancellation so video traffic cannot restart it.
     tokio::time::sleep_until(session.next_output).await;
