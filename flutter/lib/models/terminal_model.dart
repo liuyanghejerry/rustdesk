@@ -72,6 +72,31 @@ class TerminalModel with ChangeNotifier {
   String get _resumeToken =>
       bind.mainGetPeerOptionSync(id: id, key: resumeOption);
 
+  String get _ownerToken {
+    var token = bind.mainGetPeerOptionSync(id: id, key: 'terminal-shell-owner');
+    if (token.isEmpty) {
+      token = const Uuid().v4();
+      bind.mainSetPeerOptionSync(
+          id: id, key: 'terminal-shell-owner', value: token);
+    }
+    return token;
+  }
+
+  List<String> _legacyResumeTokens() {
+    final ids = <int>{0, terminalId};
+    try {
+      ids.addAll((jsonDecode(bind.mainGetPeerOptionSync(
+              id: id, key: 'terminal-channel-tabs')) as List)
+          .whereType<int>()
+          .where((id) => id > 0 && id <= 1000));
+    } catch (_) {}
+    return [
+      bind.mainGetPeerOptionSync(id: id, key: terminalResumeOption),
+      ...ids.map((terminalId) => bind.mainGetPeerOptionSync(
+          id: id, key: '$terminalResumeOption-standalone-$terminalId'))
+    ].where((token) => token.isNotEmpty).toSet().toList();
+  }
+
   void Function(Map<String, dynamic>)? onImageResponse;
   late final Terminal terminal;
   late final TerminalController terminalController;
@@ -378,7 +403,8 @@ class TerminalModel with ChangeNotifier {
               rows: rows,
               cols: cols,
               resumeToken: resumeToken,
-              createIfMissing: createIfMissing)
+              createIfMissing: createIfMissing,
+              ownerToken: _ownerToken)
           : bind.sessionOpenTerminal(
               sessionId: parent.sessionId,
               terminalId: terminalId,
@@ -403,18 +429,24 @@ class TerminalModel with ChangeNotifier {
   }
 
   Future<List<Map<String, dynamic>>> retainedShells() async {
-    if (_disposed || !isChannel) throw StateError('Terminal unavailable');
+    if (_disposed ||
+        !isChannel ||
+        !parent.ffiModel.pi.features.terminalChannelSessions)
+      throw StateError('Terminal unavailable');
     if (_sessionsRequest != null)
       throw StateError('Request already in progress');
     final request = Completer<List<Map<String, dynamic>>>();
     _sessionsRequest = request;
-    unawaited(bind
-        .sessionTerminalList(
-            sessionId: parent.sessionId, terminalId: terminalId)
-        .catchError((Object error) {
-      if (!request.isCompleted) request.completeError(error);
-    }));
     try {
+      unawaited(bind
+          .sessionTerminalList(
+              sessionId: parent.sessionId,
+              terminalId: terminalId,
+              ownerToken: _ownerToken,
+              resumeTokens: _legacyResumeTokens())
+          .catchError((Object error) {
+        if (!request.isCompleted) request.completeError(error);
+      }));
       return await request.future.timeout(const Duration(seconds: 5));
     } finally {
       if (identical(_sessionsRequest, request)) _sessionsRequest = null;

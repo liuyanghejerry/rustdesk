@@ -817,9 +817,9 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg_out));
     }
 
-    pub fn terminal_list(&self, terminal_id: i32) {
+    pub fn terminal_list(&self, terminal_id: i32, owner_token: String, resume_tokens: Vec<String>) {
         let mut action = TerminalAction::new();
-        action.set_list(base::message_proto::ListTerminalSessions { terminal_id, ..Default::default() });
+        action.set_list(base::message_proto::ListTerminalSessions { terminal_id, owner_token, resume_tokens, ..Default::default() });
         let mut msg = Message::new(); msg.set_terminal_action(action); self.send(Data::Message(msg));
     }
 
@@ -831,9 +831,9 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg));
     }
 
-    pub fn terminal_start(&self, terminal_id: i32, rows: u32, cols: u32, resume_token: String, create_if_missing: bool) {
+    pub fn terminal_start(&self, terminal_id: i32, rows: u32, cols: u32, resume_token: String, create_if_missing: bool, owner_token: String) {
         let mut action = TerminalAction::new();
-        action.set_open(OpenTerminal { terminal_id, rows, cols, resume_token, create_if_missing, ..Default::default() });
+        action.set_open(OpenTerminal { terminal_id, rows, cols, resume_token, create_if_missing, owner_token, ..Default::default() });
         let mut msg = Message::new(); msg.set_terminal_action(action); self.send(Data::Message(msg));
     }
 

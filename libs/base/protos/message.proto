@@ -106,7 +106,8 @@ message Features {
   bool terminal_channel = 4;
   bool terminal_channel_resume = 5;
   bool terminal_channel_standalone = 6;
-  bool terminal_channel_sessions = 7;
+  reserved 7;
+  bool terminal_channel_sessions = 8;
 }
 
 message CodecAbility {
@@ -910,6 +911,7 @@ message OpenTerminal {
   uint32 cols = 3;
   string resume_token = 4;
   bool create_if_missing = 5;
+  string owner_token = 6;
 }
 
 message ResizeTerminal {
@@ -1083,6 +1085,8 @@ message Message {
 
 message ListTerminalSessions {
   int32 terminal_id = 1;
+  string owner_token = 2;
+  repeated string resume_tokens = 3;
 }
 
 message RetainedTerminalSession {

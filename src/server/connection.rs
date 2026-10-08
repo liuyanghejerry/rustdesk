@@ -6347,11 +6347,12 @@ impl Connection {
             match action.union.as_ref() {
                 Some(Union::List(request)) if request.terminal_id == 0 => {
                     let mut response = TerminalResponse::new();
-                    response.set_sessions(base::message_proto::TerminalSessionList { terminal_id: 0, sessions: super::terminal_channel_sessions::list(&self.lr.my_id), ..Default::default() });
+                    response.set_sessions(base::message_proto::TerminalSessionList { terminal_id: 0, sessions: super::terminal_channel_sessions::list(&self.lr.my_id, &request.owner_token, &request.resume_tokens), ..Default::default() });
                     let mut msg = Message::new(); msg.set_terminal_response(response); self.send(msg).await;
                     Ok(())
                 }
                 Some(Union::Open(open)) if open.terminal_id == 0 => {
+                    if !open.owner_token.is_empty() && hbb_common::uuid::Uuid::parse_str(&open.owner_token).is_err() { self.send_shell_channel_error("Invalid terminal owner token".into()).await; return; }
                     if self.shell_channel.is_none() {
                         match super::terminal_channel_sessions::take(&self.lr.my_id, &open.resume_token) {
                             Ok(mut channel) => {
@@ -6395,7 +6396,8 @@ impl Connection {
                             Err(err) => { super::terminal_channel_sessions::destroyed(&open.resume_token); self.send_shell_channel_error(err.to_string()).await; return; }
                         }
                     }
-                    if let Some(channel) = self.shell_channel.as_ref() {
+                    if let Some(channel) = self.shell_channel.as_mut() {
+                        channel.owner_token = open.owner_token.clone();
                         self.shell_channel_token = channel.resume_token.clone();
                         super::terminal_channel_sessions::attached(&self.lr.my_id, &channel.resume_token);
                         let mut msg = Message::new();

@@ -1929,10 +1929,10 @@ class RustdeskImpl {
     throw UnimplementedError("sessionTakeScreenshot");
   }
 
-  Future<void> sessionTerminalList({required UuidValue sessionId, required int terminalId, dynamic hint}) =>
+  Future<void> sessionTerminalList({required UuidValue sessionId, required int terminalId, required String ownerToken, required List<String> resumeTokens, dynamic hint}) =>
       Future.error(UnsupportedError('Retained shell list requires the native app'));
 
-  Future<void> sessionTerminalStart({required UuidValue sessionId, required int terminalId, required int rows, required int cols, required String resumeToken, required bool createIfMissing, dynamic hint}) =>
+  Future<void> sessionTerminalStart({required UuidValue sessionId, required int terminalId, required int rows, required int cols, required String resumeToken, required bool createIfMissing, required String ownerToken, dynamic hint}) =>
       sessionOpenTerminal(sessionId: sessionId, terminalId: terminalId, rows: rows, cols: cols);
 
   Future<void> sessionTerminalWrite({required UuidValue sessionId, required int terminalId, required Uint8List data, required int inputSequence, dynamic hint}) =>

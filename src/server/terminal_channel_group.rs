@@ -52,17 +52,26 @@ impl ChannelGroup {
             bail!("Invalid terminal ID");
         }
         match action.union.as_ref() {
-            Some(terminal_action::Union::List(_)) => {
+            Some(terminal_action::Union::List(request)) => {
                 let mut response = TerminalResponse::new();
                 response.set_sessions(TerminalSessionList {
                     terminal_id: id,
-                    sessions: terminal_channel_sessions::list(owner),
+                    sessions: terminal_channel_sessions::list(
+                        owner,
+                        &request.owner_token,
+                        &request.resume_tokens,
+                    ),
                     ..Default::default()
                 });
                 Ok(Some(response))
             }
             Some(terminal_action::Union::Open(open)) => {
                 terminal_channel::size(open.rows, open.cols)?;
+                if !open.owner_token.is_empty()
+                    && hbb_common::uuid::Uuid::parse_str(&open.owner_token).is_err()
+                {
+                    bail!("Invalid terminal owner token");
+                }
                 if !self.channels.contains_key(&id) {
                     if self.channels.len() >= 32 {
                         bail!("Too many terminal sessions");
@@ -99,6 +108,7 @@ impl ChannelGroup {
                         }
                     };
                     channel.resume_token = open.resume_token.clone();
+                    channel.owner_token = open.owner_token.clone();
                     terminal_channel_sessions::attached(owner, &channel.resume_token);
                     self.channels.insert(id, Some(channel));
                 }
@@ -228,6 +238,7 @@ mod tests {
             rows: 24,
             cols: 80,
             resume_token: token,
+            owner_token: "b28b180f-dfab-410c-812f-7f68558e91af".into(),
             create_if_missing: true,
             ..Default::default()
         });
@@ -312,6 +323,7 @@ mod tests {
         let mut request = TerminalAction::new();
         request.set_list(ListTerminalSessions {
             terminal_id: 7,
+            owner_token: "b28b180f-dfab-410c-812f-7f68558e91af".into(),
             ..Default::default()
         });
         let listed = group
@@ -327,6 +339,14 @@ mod tests {
         assert_eq!(listed.sessions[0].resume_token, tokens[1]);
         assert!(listed.sessions[0].pid > 0);
         assert!(!listed.sessions[0].working_directory.is_empty());
+        let mut spoofed = request.clone();
+        if let Some(terminal_action::Union::List(v)) = spoofed.union.as_mut() {
+            v.owner_token = hbb_common::uuid::Uuid::new_v4().to_string();
+        }
+        let spoofed = group.action(&owner, spoofed).await.unwrap().unwrap();
+        assert!(
+            matches!(spoofed.union, Some(terminal_response::Union::Sessions(v)) if v.sessions.is_empty())
+        );
         let other = group
             .action("other-owner", request.clone())
             .await
@@ -370,6 +390,55 @@ mod tests {
         assert!(terminal_channel_sessions::take(&owner, &tokens[1])
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn legacy_shells_require_token_proof_then_bind_a_list_credential() {
+        // The earlier capability did not require a secret proof; do not negotiate it.
+        let legacy_features =
+            <base::message_proto::Features as hbb_common::protobuf::Message>::parse_from_bytes(&[
+                0x38, 0x01,
+            ])
+            .unwrap();
+        assert!(!legacy_features.terminal_channel_sessions);
+        let owner = format!("legacy-{}", hbb_common::uuid::Uuid::new_v4());
+        let token = hbb_common::uuid::Uuid::new_v4().to_string();
+        let mut group = ChannelGroup::default();
+        let mut legacy = open(1, token.clone());
+        if let Some(terminal_action::Union::Open(v)) = legacy.union.as_mut() {
+            v.owner_token.clear();
+        }
+        group.action(&owner, legacy).await.unwrap();
+        group.release(&owner, true);
+        assert!(terminal_channel_sessions::list(&owner, "", &[]).is_empty());
+        assert!(terminal_channel_sessions::list(
+            &owner,
+            "b28b180f-dfab-410c-812f-7f68558e91af",
+            &[]
+        )
+        .is_empty());
+        let listed = terminal_channel_sessions::list(&owner, "", &[token.clone()]);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].resume_token, token);
+        assert!(terminal_channel_sessions::list("spoofed", "", &[token.clone()]).is_empty());
+        group.action(&owner, open(4, token.clone())).await.unwrap();
+        group.release(&owner, true);
+        assert_eq!(
+            terminal_channel_sessions::list(&owner, "b28b180f-dfab-410c-812f-7f68558e91af", &[])
+                .len(),
+            1
+        );
+        assert!(terminal_channel_sessions::list(
+            &owner,
+            &hbb_common::uuid::Uuid::new_v4().to_string(),
+            &[]
+        )
+        .is_empty());
+        let channel = terminal_channel_sessions::take(&owner, &token)
+            .unwrap()
+            .unwrap();
+        terminal_channel_sessions::destroyed(&token);
+        drop(channel);
     }
 
     #[tokio::test]

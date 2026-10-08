@@ -705,12 +705,12 @@ pub fn session_send_chat(session_id: SessionID, text: String) {
     }
 }
 
-pub fn session_terminal_list(session_id: SessionID, terminal_id: i32) {
-    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_list(terminal_id); }
+pub fn session_terminal_list(session_id: SessionID, terminal_id: i32, owner_token: String, resume_tokens: Vec<String>) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_list(terminal_id, owner_token, resume_tokens); }
 }
 
-pub fn session_terminal_start(session_id: SessionID, terminal_id: i32, rows: u32, cols: u32, resume_token: String, create_if_missing: bool) {
-    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_start(terminal_id, rows, cols, resume_token, create_if_missing); }
+pub fn session_terminal_start(session_id: SessionID, terminal_id: i32, rows: u32, cols: u32, resume_token: String, create_if_missing: bool, owner_token: String) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) { session.terminal_start(terminal_id, rows, cols, resume_token, create_if_missing, owner_token); }
 }
 
 pub fn session_terminal_write(session_id: SessionID, terminal_id: i32, data: Vec<u8>, input_sequence: u32) {

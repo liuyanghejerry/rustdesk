@@ -46,13 +46,24 @@ pub fn retain(owner: String, channel: TerminalChannel) -> Result<()> {
     Ok(())
 }
 
-pub fn list(owner: &str) -> Vec<base::message_proto::RetainedTerminalSession> {
+pub fn list(
+    owner: &str,
+    owner_token: &str,
+    resume_tokens: &[String],
+) -> Vec<base::message_proto::RetainedTerminalSession> {
     let mut sessions = SESSIONS.lock().unwrap();
     let mut result: Vec<_> = sessions
         .detached
         .values_mut()
         .filter(|(stored_owner, _)| stored_owner == owner)
         .filter_map(|(_, channel)| {
+            // A peer ID is self-reported; listing also requires a secret proof.
+            if !(hbb_common::uuid::Uuid::parse_str(owner_token).is_ok()
+                && channel.owner_token == owner_token)
+                && !resume_tokens.contains(&channel.resume_token)
+            {
+                return None;
+            }
             channel.buffer_detached_output();
             channel.session_info()
         })

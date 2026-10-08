@@ -35,6 +35,7 @@ enum Output {
 
 pub struct TerminalChannel {
     pub resume_token: String,
+    pub owner_token: String,
     retained_output: std::collections::VecDeque<Vec<u8>>,
     retained_bytes: usize,
     output_omitted: bool,
@@ -186,6 +187,7 @@ impl TerminalChannel {
         });
         Ok(Self {
             resume_token: hbb_common::uuid::Uuid::new_v4().to_string(),
+            owner_token: String::new(),
             retained_output: Default::default(),
             retained_bytes: 0,
             output_omitted: false,
