@@ -885,6 +885,7 @@ impl InvokeUiSession for FlutterHandler {
             features.insert("terminal_channel", f.terminal_channel);
             features.insert("terminal_channel_resume", f.terminal_channel_resume);
             features.insert("terminal_channel_standalone", cfg!(feature = "terminal-channel") && f.terminal_channel_standalone);
+            features.insert("terminal_channel_sessions", cfg!(feature = "terminal-channel") && f.terminal_channel_sessions);
         }
         // compatible with 1.1.9
         if get_version_number(&pi.version) < get_version_number("1.2.0") {
@@ -1151,6 +1152,12 @@ impl InvokeUiSession for FlutterHandler {
                     ("replay", json!(data.replayed)),
                 ];
                 self.push_event_("terminal_response", &event_data, &[], &[]);
+            }
+            Some(Union::Sessions(list)) => {
+                let sessions: Vec<_> = list.sessions.iter().map(|session| json!({
+                    "resume_token": session.resume_token, "pid": session.pid, "working_directory": session.working_directory,
+                })).collect();
+                self.push_event_("terminal_response", &[("type", json!("sessions")), ("terminal_id", json!(list.terminal_id)), ("sessions", json!(sessions))], &[], &[]);
             }
             Some(Union::Resources(usage)) => {
                 self.push_event_("terminal_response", &[

@@ -817,6 +817,12 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg_out));
     }
 
+    pub fn terminal_list(&self, terminal_id: i32) {
+        let mut action = TerminalAction::new();
+        action.set_list(base::message_proto::ListTerminalSessions { terminal_id, ..Default::default() });
+        let mut msg = Message::new(); msg.set_terminal_action(action); self.send(Data::Message(msg));
+    }
+
     pub fn terminal_image(&self, terminal_id: i32, request_id: u32, path: String) {
         let mut action = TerminalAction::new();
         action.set_image(base::message_proto::TerminalImageRequest { terminal_id, request_id, path, ..Default::default() });

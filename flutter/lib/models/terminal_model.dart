@@ -67,6 +67,7 @@ class TerminalModel with ChangeNotifier {
   int _inputSequence = DateTime.now().microsecondsSinceEpoch & 0xffffffff;
   int _inputGeneration = 0;
   Completer<void>? _closeAck;
+  Completer<List<Map<String, dynamic>>>? _sessionsRequest;
   Timer? _resumeRetry;
   String get _resumeToken =>
       bind.mainGetPeerOptionSync(id: id, key: resumeOption);
@@ -401,6 +402,45 @@ class TerminalModel with ChangeNotifier {
     }
   }
 
+  Future<List<Map<String, dynamic>>> retainedShells() async {
+    if (_disposed || !isChannel) throw StateError('Terminal unavailable');
+    if (_sessionsRequest != null)
+      throw StateError('Request already in progress');
+    final request = Completer<List<Map<String, dynamic>>>();
+    _sessionsRequest = request;
+    unawaited(bind
+        .sessionTerminalList(
+            sessionId: parent.sessionId, terminalId: terminalId)
+        .catchError((Object error) {
+      if (!request.isCompleted) request.completeError(error);
+    }));
+    try {
+      return await request.future.timeout(const Duration(seconds: 5));
+    } finally {
+      if (identical(_sessionsRequest, request)) _sessionsRequest = null;
+    }
+  }
+
+  Future<void> selectShell(String token) async {
+    final closed = onClosed;
+    onClosed = null;
+    try {
+      if (_terminalOpened) await closeTerminal(keepShell: true);
+      await _channelInputQueue.catchError((Object _) {});
+      if (_disposed) return;
+      bind.mainSetPeerOptionSync(id: id, key: resumeOption, value: token);
+      title = '';
+      _pendingOutputChunks.clear();
+      _pendingOutputSuppressFlags.clear();
+      _pendingOutputSize = 0;
+      _inputBuffer.clear();
+      _writeTerminalChunk('\x1bc', suppressTerminalOutput: true);
+      await openTerminal();
+    } finally {
+      if (!_disposed) onClosed = closed;
+    }
+  }
+
   Future<void> sendVirtualKey(String data) async {
     return _handleInput(data, virtualKey: isChannel);
   }
@@ -558,6 +598,13 @@ class TerminalModel with ChangeNotifier {
     }
 
     switch (type) {
+      case 'sessions':
+        if (_sessionsRequest?.isCompleted == false) {
+          _sessionsRequest!.complete((evt['sessions'] as List? ?? [])
+              .map((entry) => Map<String, dynamic>.from(entry as Map))
+              .toList());
+        }
+        break;
       case 'resources':
         if (isChannel && !_disposed) {
           resourceUsage = TerminalResourceUsage.fromEvent(evt);
@@ -642,6 +689,8 @@ class TerminalModel with ChangeNotifier {
           .where((id) => !parent.terminalModels.containsKey(id))
           .toList();
       if (kWindowId != null &&
+          (!isChannel ||
+              !parent.ffiModel.pi.features.terminalChannelSessions) &&
           persistentSessions.isNotEmpty &&
           (!isChannel || !_restoredChannelTabs)) {
         _restoredChannelTabs = true;
@@ -659,6 +708,7 @@ class TerminalModel with ChangeNotifier {
   }
 
   List<int> _rememberedChannelTabs() {
+    if (parent.ffiModel.pi.features.terminalChannelSessions) return [];
     try {
       return (jsonDecode(bind.mainGetPeerOptionSync(
               id: id, key: 'terminal-channel-tabs')) as List)
@@ -672,6 +722,7 @@ class TerminalModel with ChangeNotifier {
   }
 
   void _rememberChannelTab(bool keep) {
+    if (parent.ffiModel.pi.features.terminalChannelSessions) return;
     final ids = _rememberedChannelTabs().toSet();
     if (keep) {
       ids.add(terminalId);
@@ -853,6 +904,8 @@ class TerminalModel with ChangeNotifier {
       bind.mainSetPeerOptionSync(id: id, key: resumeOption, value: '');
       if (terminalId > 0) _rememberChannelTab(false);
     }
+    if (_sessionsRequest?.isCompleted == false)
+      _sessionsRequest!.completeError(StateError(message));
     if (isChannel && message == 'Terminal transport disconnected') {
       _channelDisconnected();
       return;
@@ -876,6 +929,8 @@ class TerminalModel with ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    if (_sessionsRequest?.isCompleted == false)
+      _sessionsRequest!.completeError(StateError('Terminal closed'));
     if (isChannel) _channelDisconnected();
     terminal.onOutput = null;
     terminal.onTitleChange = null;

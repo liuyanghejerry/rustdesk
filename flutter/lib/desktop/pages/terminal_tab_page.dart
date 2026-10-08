@@ -526,6 +526,11 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
       if (call.method == kWindowEventNewTerminal) {
         final args = jsonDecode(call.arguments);
         final id = args['id'];
+        if (args['resume_saved'] == true) {
+          _addNewTerminal(id,
+              terminalId: args['terminalId'], resumeSaved: true);
+          return null;
+        }
         windowOnTop(windowId());
         // Allow multiple terminals for the same connection
         final terminalId = args['terminalId'] ?? _nextTerminalId++;
@@ -714,7 +719,8 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
     return false;
   }
 
-  void _addNewTerminal(String peerId, {int? terminalId}) {
+  void _addNewTerminal(String peerId,
+      {int? terminalId, bool resumeSaved = false}) {
     // Find first tab for this peer to get connection parameters
     final firstTab = tabController.state.value.tabs.firstWhere(
       (tab) {
@@ -725,6 +731,14 @@ class _TerminalTabPageState extends State<TerminalTabPage> {
     if (firstTab.page is TerminalPage) {
       final page = firstTab.page as TerminalPage;
       final newTerminalId = terminalId ?? _nextTerminalId++;
+      final ffi = TerminalConnectionManager.getExistingConnection(peerId);
+      if (!resumeSaved &&
+          ffi?.ffiModel.pi.features.terminalChannelSessions == true) {
+        bind.mainSetPeerOptionSync(
+            id: peerId,
+            key: '$terminalResumeOption-standalone-$newTerminalId',
+            value: '');
+      }
       if (terminalId != null && terminalId >= _nextTerminalId) {
         _nextTerminalId = terminalId + 1;
       }

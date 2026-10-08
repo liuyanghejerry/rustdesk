@@ -2,6 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'dart:convert';
+import '../../consts.dart';
+import '../../main.dart';
+import '../../models/platform_model.dart';
+import '../../mobile/pages/terminal_exit_dialog.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/terminal_model.dart';
@@ -210,6 +216,23 @@ class _TerminalPageState extends State<TerminalPage>
         ffi: _ffi,
         model: _terminalModel,
         focusNode: _terminalFocusNode,
+        onResumeShell: (token) async {
+          final newId = List.generate(1000, (i) => i + 1).firstWhere((id) =>
+              !widget.tabController.state.value.tabs
+                  .any((tab) => tab.key == '${widget.id}_$id'));
+          bind.mainSetPeerOptionSync(
+              id: widget.id,
+              key: '$terminalResumeOption-standalone-$newId',
+              value: token);
+          await DesktopMultiWindow.invokeMethod(
+              kWindowId!,
+              kWindowEventNewTerminal,
+              jsonEncode({
+                'id': widget.id,
+                'terminalId': newId,
+                'resume_saved': true
+              }));
+        },
         onClosed: () => widget.tabController.closeBy(widget.tabKey),
       );
     return Scaffold(

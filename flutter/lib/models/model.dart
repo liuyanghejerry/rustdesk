@@ -1409,6 +1409,7 @@ class FfiModel with ChangeNotifier {
     } else if (connType == ConnType.terminal) {
       final features = json.decode(evt['features']) as Map<String, dynamic>;
       _pi.features.terminalChannelStandalone = features['terminal_channel_standalone'] == true;
+      _pi.features.terminalChannelSessions = features['terminal_channel_sessions'] == true;
       _pi.features.terminalChannel = features['terminal_channel'] == true;
       _pi.features.terminalChannelResume = features['terminal_channel_resume'] == true;
       // Call onReady on all registered terminal models
@@ -1460,6 +1461,7 @@ class FfiModel with ChangeNotifier {
       _pi.features.terminalChannel = features['terminal_channel'] == true;
       _pi.features.terminalChannelResume = features['terminal_channel_resume'] == true;
       _pi.features.terminalChannelStandalone = features['terminal_channel_standalone'] == true;
+      _pi.features.terminalChannelSessions = features['terminal_channel_sessions'] == true;
       if (!isCache) {
         handleResolutions(peerId, evt["resolutions"]);
       }
@@ -4520,6 +4522,7 @@ class Features {
   bool terminalChannel = false;
   bool terminalChannelResume = false;
   bool terminalChannelStandalone = false;
+  bool terminalChannelSessions = false;
   bool privacyMode = false;
 }
 

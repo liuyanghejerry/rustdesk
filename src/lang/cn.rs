@@ -798,5 +798,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Update the controlled device to use resumable terminals.", "请更新被控端以使用可续接终端。"),
         ("Some terminal output was omitted while disconnected.", "断线期间的部分终端输出已省略。"),
         ("The retained shell is no longer available.", "保留的 shell 已不可用，请重新打开终端。"),
+        ("Retained shells", "保留的 shell"),
+        ("The current shell will be kept when switching.", "当前 shell 会在切换时保留。"),
+        ("No retained shells", "没有可恢复的 shell"),
+        ("New shell", "新建 shell"),
     ].iter().cloned().collect();
 }

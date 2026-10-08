@@ -15,6 +15,7 @@ import 'package:flutter_hbb/mobile/pages/terminal_network_status.dart';
 import 'package:flutter_hbb/mobile/pages/terminal_shortcuts.dart';
 import 'package:xterm/xterm.dart';
 import 'terminal_exit_dialog.dart';
+import 'terminal_shell_picker.dart';
 
 /// Shared channel terminal view for desktop sessions and terminal-only connections.
 class SessionTerminalPage extends StatefulWidget {
@@ -23,10 +24,12 @@ class SessionTerminalPage extends StatefulWidget {
       required this.ffi,
       this.model,
       this.onClosed,
+      this.onResumeShell,
       this.focusNode});
   final FFI ffi;
   final TerminalModel? model;
   final VoidCallback? onClosed;
+  final Future<void> Function(String)? onResumeShell;
   final FocusNode? focusNode;
 
   @override
@@ -38,6 +41,7 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
   final _viewKey = GlobalKey<TerminalViewState>();
   late final _focusNode = widget.focusNode ?? FocusNode();
   bool _closing = false;
+  bool _selectingShell = false;
   bool _choosingExit = false;
   bool _exitApplied = false;
   int _imageId = 0;
@@ -106,6 +110,27 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
       _choosingExit = false;
     }
     return false;
+  }
+
+  Future<void> _pickShell() async {
+    if (_selectingShell || _closing) return;
+    setState(() => _selectingShell = true);
+    try {
+      final sessions = await _model.retainedShells();
+      if (!mounted) return;
+      final token = await chooseRetainedShell(context, sessions,
+          keepsCurrent: widget.onResumeShell == null && _model.terminalOpened);
+      if (token == null || !mounted) return;
+      if (widget.onResumeShell != null) {
+        await widget.onResumeShell!(token);
+      } else {
+        await _model.selectShell(token);
+      }
+    } catch (error) {
+      if (mounted) showToast('${translate('Failed')}: $error');
+    } finally {
+      if (mounted) setState(() => _selectingShell = false);
+    }
   }
 
   Future<void> _openKeyboard() async {
@@ -287,6 +312,17 @@ class _SessionTerminalPageState extends State<SessionTerminalPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis)),
             actions: [
+              if (widget.ffi.ffiModel.pi.features.terminalChannelSessions)
+                IconButton(
+                  tooltip: translate('Retained shells'),
+                  icon: _selectingShell
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.list_alt),
+                  onPressed: _selectingShell ? null : _pickShell,
+                ),
               AnimatedBuilder(
                   animation: _model,
                   builder: (_, __) => _model.terminalOpened

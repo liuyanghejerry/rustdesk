@@ -46,6 +46,21 @@ pub fn retain(owner: String, channel: TerminalChannel) -> Result<()> {
     Ok(())
 }
 
+pub fn list(owner: &str) -> Vec<base::message_proto::RetainedTerminalSession> {
+    let mut sessions = SESSIONS.lock().unwrap();
+    let mut result: Vec<_> = sessions
+        .detached
+        .values_mut()
+        .filter(|(stored_owner, _)| stored_owner == owner)
+        .filter_map(|(_, channel)| {
+            channel.buffer_detached_output();
+            channel.session_info()
+        })
+        .collect();
+    result.sort_by_key(|session| session.pid);
+    result
+}
+
 pub fn take(owner: &str, token: &str) -> Result<Option<TerminalChannel>> {
     let mut sessions = SESSIONS.lock().unwrap();
     if let Some(stored_owner) = sessions.active.get(token) {

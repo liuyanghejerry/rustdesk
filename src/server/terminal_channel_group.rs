@@ -5,6 +5,7 @@ use super::{
 };
 use base::message_proto::{
     terminal_action, terminal_response, TerminalAction, TerminalClosed, TerminalResponse,
+    TerminalSessionList,
 };
 use hbb_common::{
     anyhow::{anyhow, bail, Result},
@@ -51,6 +52,15 @@ impl ChannelGroup {
             bail!("Invalid terminal ID");
         }
         match action.union.as_ref() {
+            Some(terminal_action::Union::List(_)) => {
+                let mut response = TerminalResponse::new();
+                response.set_sessions(TerminalSessionList {
+                    terminal_id: id,
+                    sessions: terminal_channel_sessions::list(owner),
+                    ..Default::default()
+                });
+                Ok(Some(response))
+            }
             Some(terminal_action::Union::Open(open)) => {
                 terminal_channel::size(open.rows, open.cols)?;
                 if !self.channels.contains_key(&id) {
@@ -175,6 +185,7 @@ pub fn action_id(action: &TerminalAction) -> Result<i32> {
         Some(terminal_action::Union::Resize(v)) => v.terminal_id,
         Some(terminal_action::Union::Close(v)) => v.terminal_id,
         Some(terminal_action::Union::Image(v)) => v.terminal_id,
+        Some(terminal_action::Union::List(v)) => v.terminal_id,
         _ => bail!("Invalid terminal action"),
     })
 }
@@ -206,7 +217,8 @@ impl Drop for ChannelGroup {
 mod tests {
     use super::*;
     use base::message_proto::{
-        CloseTerminal as TerminalClosedAction, OpenTerminal, TerminalData, TerminalImageRequest,
+        CloseTerminal as TerminalClosedAction, ListTerminalSessions, OpenTerminal, TerminalData,
+        TerminalImageRequest,
     };
 
     fn open(id: i32, token: String) -> TerminalAction {
@@ -224,13 +236,14 @@ mod tests {
 
     #[tokio::test]
     async fn independent_shells_keep_output_acknowledgements_and_close_scoped() {
+        let owner = format!("multiplex-{}", hbb_common::uuid::Uuid::new_v4());
         let mut group = ChannelGroup::default();
         let tokens: Vec<_> = (0..2)
             .map(|_| hbb_common::uuid::Uuid::new_v4().to_string())
             .collect();
         for id in 1..=2 {
             let response = group
-                .action("owner", open(id, tokens[id as usize - 1].clone()))
+                .action(&owner, open(id, tokens[id as usize - 1].clone()))
                 .await
                 .unwrap()
                 .unwrap();
@@ -246,7 +259,7 @@ mod tests {
                 input_sequence: id as u32,
                 ..Default::default()
             });
-            group.action("owner", action).await.unwrap();
+            group.action(&owner, action).await.unwrap();
         }
         assert!(group
             .action("other-owner", open(3, tokens[0].clone()))
@@ -290,41 +303,71 @@ mod tests {
             terminal_id: 1,
             ..Default::default()
         });
-        let response = group.action("owner", action).await.unwrap().unwrap();
+        let response = group.action(&owner, action).await.unwrap().unwrap();
         assert!(
             matches!(response.union, Some(terminal_response::Union::Closed(v)) if v.terminal_id == 1)
         );
         assert_eq!(group.ids(), vec![2]);
-        group.release("owner", true);
+        group.release(&owner, true);
+        let mut request = TerminalAction::new();
+        request.set_list(ListTerminalSessions {
+            terminal_id: 7,
+            ..Default::default()
+        });
+        let listed = group
+            .action(&owner, request.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        let Some(terminal_response::Union::Sessions(listed)) = listed.union else {
+            panic!("Expected session list");
+        };
+        assert_eq!(listed.terminal_id, 7);
+        assert_eq!(listed.sessions.len(), 1);
+        assert_eq!(listed.sessions[0].resume_token, tokens[1]);
+        assert!(listed.sessions[0].pid > 0);
+        assert!(!listed.sessions[0].working_directory.is_empty());
+        let other = group
+            .action("other-owner", request.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(other.union, Some(terminal_response::Union::Sessions(v)) if v.sessions.is_empty())
+        );
         group
-            .action("owner", open(2, tokens[1].clone()))
+            .action(&owner, open(7, tokens[1].clone()))
             .await
             .unwrap();
         let mut action = TerminalAction::new();
         action.set_data(TerminalData {
-            terminal_id: 2,
+            terminal_id: 7,
             data: b"sleep .2; printf '\nRESUMED_%s\n' \"$CHANNEL_STATE\"; stty size\r"
                 .to_vec()
                 .into(),
             ..Default::default()
         });
-        group.action("owner", action).await.unwrap();
+        group.action(&owner, action).await.unwrap();
         let mut resumed = String::new();
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             while !resumed.contains("RESUMED_2\r\n") || !resumed.contains("24 80\r\n") {
                 if let Some(terminal_response::Union::Data(v)) = group.receive().await.union {
-                    assert_eq!(v.terminal_id, 2);
+                    assert_eq!(v.terminal_id, 7);
                     resumed.push_str(&String::from_utf8_lossy(&v.data));
                 }
             }
         })
         .await
         .unwrap();
-        group.release("owner", false);
-        assert!(terminal_channel_sessions::take("owner", &tokens[0])
+        let attached = group.action(&owner, request).await.unwrap().unwrap();
+        assert!(
+            matches!(attached.union, Some(terminal_response::Union::Sessions(v)) if v.sessions.is_empty())
+        );
+        group.release(&owner, false);
+        assert!(terminal_channel_sessions::take(&owner, &tokens[0])
             .unwrap()
             .is_none());
-        assert!(terminal_channel_sessions::take("owner", &tokens[1])
+        assert!(terminal_channel_sessions::take(&owner, &tokens[1])
             .unwrap()
             .is_none());
     }

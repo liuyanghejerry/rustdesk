@@ -2133,6 +2133,7 @@ impl Connection {
             terminal_channel: super::terminal_channel::supported(),
             terminal_channel_resume: super::terminal_channel::supported(),
             terminal_channel_standalone: super::terminal_channel::supported(),
+            terminal_channel_sessions: super::terminal_channel::supported(),
             privacy_mode: privacy_mode::is_privacy_mode_supported(),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             terminal,
@@ -6344,6 +6345,12 @@ impl Connection {
             Err(hbb_common::anyhow::anyhow!("No permission of terminal"))
         } else {
             match action.union.as_ref() {
+                Some(Union::List(request)) if request.terminal_id == 0 => {
+                    let mut response = TerminalResponse::new();
+                    response.set_sessions(base::message_proto::TerminalSessionList { terminal_id: 0, sessions: super::terminal_channel_sessions::list(&self.lr.my_id), ..Default::default() });
+                    let mut msg = Message::new(); msg.set_terminal_response(response); self.send(msg).await;
+                    Ok(())
+                }
                 Some(Union::Open(open)) if open.terminal_id == 0 => {
                     if self.shell_channel.is_none() {
                         match super::terminal_channel_sessions::take(&self.lr.my_id, &open.resume_token) {

@@ -289,6 +289,22 @@ impl TerminalChannel {
         }
     }
 
+    pub fn session_info(&self) -> Option<base::message_proto::RetainedTerminalSession> {
+        if self.ended { return None; }
+        #[cfg(all(feature = "terminal-channel", unix, not(any(target_os = "android", target_os = "ios"))))]
+        {
+            let pid = self.child.as_ref()?.process_id()?;
+            return Some(base::message_proto::RetainedTerminalSession {
+                resume_token: self.resume_token.clone(),
+                pid,
+                working_directory: shell_working_directory(pid).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|error| { log::trace!("Terminal working directory unavailable: {error}"); String::new() }),
+                ..Default::default()
+            });
+        }
+        #[cfg(not(all(feature = "terminal-channel", unix, not(any(target_os = "android", target_os = "ios")))))]
+        None
+    }
+
     pub fn opened(&self) -> TerminalResponse {
         let mut response = TerminalResponse::new();
         response.set_opened(TerminalOpened {

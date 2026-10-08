@@ -798,6 +798,10 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Update the controlled device to use resumable terminals.", ""),
         ("Some terminal output was omitted while disconnected.", ""),
         ("The retained shell is no longer available.", ""),
+        ("Retained shells", ""),
+        ("The current shell will be kept when switching.", ""),
+        ("No retained shells", ""),
+        ("New shell", ""),
     ].iter().cloned().collect();
 }
 
